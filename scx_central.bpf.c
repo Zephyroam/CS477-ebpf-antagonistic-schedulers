@@ -45,7 +45,7 @@
  * Copyright (c) 2022 Tejun Heo <tj@kernel.org>
  * Copyright (c) 2022 David Vernet <dvernet@meta.com>
  */
-#include <scx/common.bpf.h>
+#include <include/scx/common.bpf.h>
 
 char _license[] SEC("license") = "GPL";
 
@@ -338,24 +338,15 @@ int BPF_STRUCT_OPS_SLEEPABLE(central_init)
 	return ret;
 }
 
-void BPF_STRUCT_OPS(central_exit, struct scx_exit_info *ei)
-{
-	UEI_RECORD(uei, ei);
-}
-
-SCX_OPS_DEFINE(central_ops,
-	       /*
-		* We are offloading all scheduling decisions to the central CPU
-		* and thus being the last task on a given CPU doesn't mean
-		* anything special. Enqueue the last tasks like any other tasks.
-		*/
-	       .flags			= SCX_OPS_ENQ_LAST,
-
-	       .select_cpu		= (void *)central_select_cpu,
-	       .enqueue			= (void *)central_enqueue,
-	       .dispatch		= (void *)central_dispatch,
-	       .running			= (void *)central_running,
-	       .stopping		= (void *)central_stopping,
-	       .init			= (void *)central_init,
-	       .exit			= (void *)central_exit,
-	       .name			= "central");
+// Define the main scheduler operations structure (sched_ops)
+SEC(".struct_ops.link")
+struct sched_ext_ops sched_ops = {
+	.enqueue   = (void *)central_enqueue,
+	.dispatch  = (void *)central_dispatch,
+	.init      = (void *)central_init,
+	.select_cpu      = (void *)central_select_cpu,
+	.running      = (void *)central_running,
+	.stopping      = (void *)central_stopping,
+	.flags     = SCX_OPS_ENQ_LAST | SCX_OPS_KEEP_BUILTIN_IDLE,
+	.name      = "central_scheduler"
+};
