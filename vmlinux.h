@@ -4705,6 +4705,7 @@ struct zone {
 	unsigned long _watermark[4];
 	unsigned long watermark_boost;
 	unsigned long nr_reserved_highatomic;
+	unsigned long nr_free_highatomic;
 	long lowmem_reserve[5];
 	int node;
 	struct pglist_data *zone_pgdat;
@@ -4723,7 +4724,6 @@ struct zone {
 	unsigned long nr_isolate_pageblock;
 	seqlock_t span_seqlock;
 	int initialized;
-	long: 64;
 	long: 64;
 	long: 64;
 	long: 64;
@@ -32432,7 +32432,8 @@ enum tlb_flush_reason {
 	TLB_LOCAL_SHOOTDOWN = 2,
 	TLB_LOCAL_MM_SHOOTDOWN = 3,
 	TLB_REMOTE_SEND_IPI = 4,
-	NR_TLB_FLUSH_REASONS = 5,
+	TLB_REMOTE_WRONG_CPU = 5,
+	NR_TLB_FLUSH_REASONS = 6,
 };
 
 struct exception_stacks {
@@ -35309,6 +35310,12 @@ typedef struct {
 	struct rq *lock;
 	struct rq_flags rf;
 } class_rq_lock_irqsave_t;
+
+typedef struct {
+	struct task_struct *lock;
+	struct rq *rq;
+	struct rq_flags rf;
+} class___task_rq_lock_t;
 
 typedef struct {
 	struct task_struct *lock;
@@ -40006,6 +40013,7 @@ struct ZSTD_DCtx_s {
 	size_t rleSize;
 	size_t staticSize;
 	int isFrameDecompression;
+	int bmi2;
 	ZSTD_DDict *ddictLocal;
 	const ZSTD_DDict *ddict;
 	U32 dictID;
@@ -54196,7 +54204,6 @@ struct vma_munmap_struct {
 	int vma_count;
 	bool unlock;
 	bool clear_ptes;
-	bool closed_vm_ops;
 	unsigned long nr_pages;
 	unsigned long locked_vm;
 	unsigned long nr_accounted;
@@ -77709,19 +77716,19 @@ typedef struct {
 } HUF_ReadDTableX2_Workspace;
 
 typedef struct {
+	BYTE maxTableLog;
+	BYTE tableType;
+	BYTE tableLog;
+	BYTE reserved;
+} DTableDesc;
+
+typedef struct {
 	BitContainerType bitContainer;
 	unsigned int bitsConsumed;
 	const char *ptr;
 	const char *start;
 	const char *limitPtr;
 } BIT_DStream_t;
-
-typedef struct {
-	BYTE maxTableLog;
-	BYTE tableType;
-	BYTE tableLog;
-	BYTE reserved;
-} DTableDesc;
 
 typedef enum {
 	BIT_DStream_unfinished = 0,
@@ -77740,9 +77747,9 @@ typedef struct {
 	const BYTE *iend[4];
 } HUF_DecompressFastArgs;
 
-typedef void (*HUF_DecompressFastLoopFn)(HUF_DecompressFastArgs *);
-
 typedef size_t (*HUF_DecompressUsingDTableFn)(void *, size_t, const void *, size_t, const HUF_DTable *);
+
+typedef void (*HUF_DecompressFastLoopFn)(HUF_DecompressFastArgs *);
 
 typedef struct {
 	size_t nbBlocks;
