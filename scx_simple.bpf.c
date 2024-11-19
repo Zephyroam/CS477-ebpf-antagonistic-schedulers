@@ -38,6 +38,19 @@ UEI_DEFINE(uei);
  */
 #define SHARED_DSQ 0
 
+// struct { /* BPF_MAP_TYPE_PERF_EVENT_ARRAY */
+//     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+//     __uint(max_entries, 12); // 128 CPUs
+// } cache_miss_events SEC(".maps");
+struct { 
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(key_size, sizeof(u32)); // Key size
+    __uint(value_size, sizeof(u64)); // Value size
+    __uint(max_entries, 2); // Number of entries
+} cache_miss_events SEC(".maps");
+
+
+
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__uint(key_size, sizeof(u32));
@@ -50,6 +63,13 @@ static void stat_inc(u32 idx)
 	u64 *cnt_p = bpf_map_lookup_elem(&stats, &idx);
 	if (cnt_p)
 		(*cnt_p)++;
+}
+
+static void cache_miss_inc(u32 cpu)
+{
+	/* Get record from map of cache event*/
+	/* TODO*/
+	
 }
 
 static inline bool vtime_before(u64 a, u64 b)
@@ -71,9 +91,13 @@ s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 w
 	return cpu;
 }
 
+
+
 void BPF_STRUCT_OPS(simple_enqueue, struct task_struct *p, u64 enq_flags)
 {
 	stat_inc(1);	/* count global queueing */
+
+	cache_miss_inc(1);
 
 	if (fifo_sched) {
 		scx_bpf_dispatch(p, SHARED_DSQ, SCX_SLICE_DFL, enq_flags);
@@ -134,10 +158,32 @@ void BPF_STRUCT_OPS(simple_enable, struct task_struct *p)
 	p->scx.dsq_vtime = vtime_now;
 }
 
+
+
+/* Scheduler init*/
 s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
 {
-	return scx_bpf_create_dsq(SHARED_DSQ, -1);
+    int ret;
+
+    
+    ret = scx_bpf_create_dsq(SHARED_DSQ, -1);
+    if (ret) {
+        bpf_printk("Failed to create dispatch queue: %d\n", ret);
+        return ret;
+    }
+
+    // verify that the cache_miss_events map is initialized
+    u32 cpu = 0;
+    int *fd = bpf_map_lookup_elem(&cache_miss_events, &cpu);
+    if (!fd) {
+        bpf_printk("cache_miss_events map not initialized by userspace!\n");
+        return -EINVAL; 
+    }
+
+    bpf_printk("Simple scheduler initialized successfully.\n");
+    return 0;
 }
+
 
 // Define the main scheduler operations structure (sched_ops)
 SEC(".struct_ops.link")
