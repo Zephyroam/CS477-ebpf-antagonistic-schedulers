@@ -20,6 +20,9 @@
  * Copyright (c) 2022 Tejun Heo <tj@kernel.org>
  * Copyright (c) 2022 David Vernet <dvernet@meta.com>
  */
+
+
+/* https://github.com/torvalds/linux/blob/master/kernel/sched/ext.c */ // sched kernel
 #include <include/scx/common.bpf.h>
 
 char _license[] SEC("license") = "GPL";
@@ -38,18 +41,6 @@ UEI_DEFINE(uei);
  */
 #define SHARED_DSQ 0
 
-// struct { /* BPF_MAP_TYPE_PERF_EVENT_ARRAY */
-//     __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-//     __uint(max_entries, 12); // 128 CPUs
-// } cache_miss_events SEC(".maps");
-struct { 
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __uint(key_size, sizeof(u32)); // Key size
-    __uint(value_size, sizeof(u64)); // Value size
-    __uint(max_entries, 2); // Number of entries
-} cache_miss_events SEC(".maps");
-
-
 
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
@@ -58,6 +49,15 @@ struct {
 	__uint(max_entries, 2);			/* [local, global] */
 } stats SEC(".maps");
 
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);   
+	__uint(key_size, sizeof(u32));      
+	__uint(value_size, sizeof(u64));    
+	__uint(max_entries, 128);           
+} cache_miss_stats SEC(".maps");
+
+
+
 static void stat_inc(u32 idx)
 {
 	u64 *cnt_p = bpf_map_lookup_elem(&stats, &idx);
@@ -65,12 +65,14 @@ static void stat_inc(u32 idx)
 		(*cnt_p)++;
 }
 
-static void cache_miss_inc(u32 cpu)
-{
-	/* Get record from map of cache event*/
-	/* TODO*/
-	
+static void cache_miss_inc(u32 cpu) {
+    u64 *count = bpf_map_lookup_elem(&cache_miss_stats, &cpu);
+    if (!count)
+        return;
+
 }
+
+
 
 static inline bool vtime_before(u64 a, u64 b)
 {
@@ -97,8 +99,7 @@ void BPF_STRUCT_OPS(simple_enqueue, struct task_struct *p, u64 enq_flags)
 {
 	stat_inc(1);	/* count global queueing */
 
-	cache_miss_inc(1);
-
+	cache_miss_inc(bpf_get_smp_processor_id());
 	if (fifo_sched) {
 		scx_bpf_dispatch(p, SHARED_DSQ, SCX_SLICE_DFL, enq_flags);
 	} else {
@@ -174,7 +175,7 @@ s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
 
     // verify that the cache_miss_events map is initialized
     u32 cpu = 0;
-    int *fd = bpf_map_lookup_elem(&cache_miss_events, &cpu);
+    int *fd = bpf_map_lookup_elem(&cache_miss_stats, &cpu);
     if (!fd) {
         bpf_printk("cache_miss_events map not initialized by userspace!\n");
         return -EINVAL; 

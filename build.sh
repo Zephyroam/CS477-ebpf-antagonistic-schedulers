@@ -8,5 +8,10 @@ clang -target bpf -g -O2 -c scx_minimal.bpf.c -o scx_minimal.bpf.o -I.
 clang -target bpf -g -O2 -c scx_central.bpf.c -o scx_central.bpf.o -I.
 clang -target bpf -g -O2 -c scx_simple.bpf.c -o scx_simple.bpf.o -I.
 
+
 # Compile the cache misses
-gcc -o cache_event cache_event.c -lbpf
+#clang -target bpf -g -c cache_event.bpf.c -o cache_event.bpf.o -I.
+
+
+
+
