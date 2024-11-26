@@ -23,6 +23,10 @@
 #include "include/scx/common.bpf.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
+#include <linux/ptrace.h>
+#include <linux/bpf.h>
+#include <linux/bpf_perf_event.h>
+#include <linux/perf_event.h>
 
 
 char _license[] SEC("license") = "GPL";
@@ -74,7 +78,7 @@ static inline bool vtime_before(u64 a, u64 b)
 	return (s64)(a - b) < 0;
 }
 
-SEC("fentry/account_page_dirtied")
+SEC("perf_event")
 int monitor_execve(struct trace_event_raw_sys_enter *ctx) {
     char filename[128];
     u32 idx = 0; // Use a fixed index for tracking execve calls
