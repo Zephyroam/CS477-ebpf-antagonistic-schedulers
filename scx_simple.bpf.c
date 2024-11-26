@@ -178,16 +178,12 @@ s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
 }
 
 
-// Define the main scheduler operations structure (sched_ops)
-SEC(".struct_ops.link")
-struct sched_ext_ops sched_ops = {
-	.enqueue   = (void *)simple_enqueue,
-	.dispatch  = (void *)simple_dispatch,
-	.init      = (void *)simple_init,
-	.select_cpu      = (void *)simple_select_cpu,
-	.running      = (void *)simple_running,
-	.stopping      = (void *)simple_stopping,
-	.enable      = (void *)simple_enable,
-	.flags     = SCX_OPS_ENQ_LAST | SCX_OPS_KEEP_BUILTIN_IDLE,
-	.name      = "simple_scheduler"
-};
+SCX_OPS_DEFINE(simple_ops,
+	       .select_cpu		= (void *)simple_select_cpu,
+	       .enqueue			= (void *)simple_enqueue,
+	       .dispatch		= (void *)simple_dispatch,
+	       .running			= (void *)simple_running,
+	       .stopping		= (void *)simple_stopping,
+	       .enable			= (void *)simple_enable,
+	       .init			= (void *)simple_init,
+	       .name			= "simple");
