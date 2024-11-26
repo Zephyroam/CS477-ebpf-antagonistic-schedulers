@@ -139,10 +139,6 @@ s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
 	return scx_bpf_create_dsq(SHARED_DSQ, -1);
 }
 
-void BPF_STRUCT_OPS(simple_exit, struct scx_exit_info *ei)
-{
-	UEI_RECORD(uei, ei);
-}
 
 SCX_OPS_DEFINE(simple_ops,
 	       .select_cpu		= (void *)simple_select_cpu,
@@ -152,5 +148,4 @@ SCX_OPS_DEFINE(simple_ops,
 	       .stopping		= (void *)simple_stopping,
 	       .enable			= (void *)simple_enable,
 	       .init			= (void *)simple_init,
-	       .exit			= (void *)simple_exit,
 	       .name			= "simple");
