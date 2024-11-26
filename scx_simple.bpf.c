@@ -25,8 +25,8 @@
 #include <linux/bpf_perf_event.h>
 #include <linux/perf_event.h>
 #include "include/scx/common.bpf.h"
-#include <bpf/bpf_helpers.h>
-#include <bpf/bpf_tracing.h>
+// #include <bpf/bpf_helpers.h>
+// #include <bpf/bpf_tracing.h>
 
 
 char _license[] SEC("license") = "GPL";
