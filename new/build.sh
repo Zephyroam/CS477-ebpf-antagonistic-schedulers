@@ -1,4 +1,4 @@
-clang -target bpf -g -O2 -c scx_simple.bpf.c -o scx_simple.bpf.o
+clang -target bpf -g -O2 -c scx_simple.bpf.c -o scx_simple.bpf.o -I.
 
 bpftool gen skeleton scx_simple.bpf.o > scx_simple.bpf.skel.h
 
