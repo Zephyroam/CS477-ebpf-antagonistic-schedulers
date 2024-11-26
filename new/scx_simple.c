@@ -9,7 +9,7 @@
 #include <signal.h>
 #include <libgen.h>
 #include <bpf/bpf.h>
-#include <include/scx/common.h>
+#include "include/scx/common.h"
 #include "scx_simple.bpf.skel.h"
 
 const char help_fmt[] =

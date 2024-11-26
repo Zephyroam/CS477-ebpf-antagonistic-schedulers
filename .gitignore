@@ -1,3 +1,2 @@
 *.o
-vmlinux.h
 cache_event
