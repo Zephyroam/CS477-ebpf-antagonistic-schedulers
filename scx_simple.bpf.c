@@ -21,7 +21,7 @@
  * Copyright (c) 2022 David Vernet <dvernet@meta.com>
  */
 #include "include/scx/common.bpf.h"
-#include <uapi/linux/ptrace.h>
+#include <linux/ptrace.h>
 
 
 char _license[] SEC("license") = "GPL";
