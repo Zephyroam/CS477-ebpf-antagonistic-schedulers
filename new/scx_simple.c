@@ -38,7 +38,7 @@ static void sigint_handler(int simple)
 	exit_req = 1;
 }
 
-static void read_stats(struct scx_simple *skel, __u64 *stats)
+static void read_stats(struct scx_simple_bpf *skel, __u64 *stats)
 {
 	int nr_cpus = libbpf_num_possible_cpus();
 	__u64 cnts[2][nr_cpus];
@@ -60,7 +60,7 @@ static void read_stats(struct scx_simple *skel, __u64 *stats)
 
 int main(int argc, char **argv)
 {
-	struct scx_simple *skel;
+	struct scx_simple_bpf *skel;
 	struct bpf_link *link;
 	__u32 opt;
 	__u64 ecode;
@@ -69,7 +69,7 @@ int main(int argc, char **argv)
 	signal(SIGINT, sigint_handler);
 	signal(SIGTERM, sigint_handler);
 restart:
-	skel = SCX_OPS_OPEN(simple_ops, scx_simple);
+	skel = SCX_OPS_OPEN(simple_ops, scx_simple_bpf);
 
 	while ((opt = getopt(argc, argv, "fvh")) != -1) {
 		switch (opt) {
@@ -85,8 +85,8 @@ restart:
 		}
 	}
 
-	SCX_OPS_LOAD(skel, simple_ops, scx_simple, uei);
-	link = SCX_OPS_ATTACH(skel, simple_ops, scx_simple);
+	SCX_OPS_LOAD(skel, simple_ops, scx_simple_bpf, uei);
+	link = SCX_OPS_ATTACH(skel, simple_ops, scx_simple_bpf);
 
 	while (!exit_req && !UEI_EXITED(skel, uei)) {
 		__u64 stats[2];
