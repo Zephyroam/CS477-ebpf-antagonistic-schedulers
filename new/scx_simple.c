@@ -99,7 +99,7 @@ restart:
 
 	bpf_link__destroy(link);
 	ecode = UEI_REPORT(skel, uei);
-	scx_simple__destroy(skel);
+	scx_simple_bpf__destroy(skel);
 
 	if (UEI_ECODE_RESTART(ecode))
 		goto restart;
