@@ -3,15 +3,8 @@
 # Create the vmlinux header with all the eBPF Linux functions
 bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
 
-# Compile the scheduler
-clang -target bpf -g -O2 -c scx_minimal.bpf.c -o scx_minimal.bpf.o -I.
-clang -target bpf -g -O2 -c scx_central.bpf.c -o scx_central.bpf.o -I.
 clang -target bpf -g -O2 -c scx_simple.bpf.c -o scx_simple.bpf.o -I.
 
+bpftool gen skeleton scx_simple.bpf.o > scx_simple.bpf.skel.h
 
-# Compile the cache misses
-#clang -target bpf -g -c cache_event.bpf.c -o cache_event.bpf.o -I.
-
-
-
-
+gcc -g -O2 -Wall scx_simple.c -o scx_simple -I/usr/include -lbpf -lelf -I.

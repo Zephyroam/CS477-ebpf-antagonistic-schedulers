@@ -20,10 +20,7 @@
  * Copyright (c) 2022 Tejun Heo <tj@kernel.org>
  * Copyright (c) 2022 David Vernet <dvernet@meta.com>
  */
-
-
-/* https://github.com/torvalds/linux/blob/master/kernel/sched/ext.c */ // sched kernel
-#include <include/scx/common.bpf.h>
+#include "include/scx/common.bpf.h"
 
 char _license[] SEC("license") = "GPL";
 
@@ -40,7 +37,6 @@ UEI_DEFINE(uei);
  * just use SCX_DSQ_GLOBAL.
  */
 #define SHARED_DSQ 0
-
 
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
@@ -92,8 +88,6 @@ s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 w
 
 	return cpu;
 }
-
-
 
 void BPF_STRUCT_OPS(simple_enqueue, struct task_struct *p, u64 enq_flags)
 {
@@ -158,8 +152,6 @@ void BPF_STRUCT_OPS(simple_enable, struct task_struct *p)
 {
 	p->scx.dsq_vtime = vtime_now;
 }
-
-
 
 /* Scheduler init*/
 s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
