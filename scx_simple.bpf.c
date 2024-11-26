@@ -71,8 +71,7 @@ static inline bool vtime_before(u64 a, u64 b)
 	return (s64)(a - b) < 0;
 }
 
-/* New tracepoint program for monitoring execve system calls */
-SEC("tracepoint/sched/sched_switch")
+SEC("perf_event/LLC-load-misses")
 int monitor_execve(struct trace_event_raw_sys_enter *ctx) {
     char filename[128];
     u32 idx = 0; // Use a fixed index for tracking execve calls
