@@ -20,13 +20,13 @@
  * Copyright (c) 2022 Tejun Heo <tj@kernel.org>
  * Copyright (c) 2022 David Vernet <dvernet@meta.com>
  */
-#include "include/scx/common.bpf.h"
-#include <bpf/bpf_helpers.h>
-#include <bpf/bpf_tracing.h>
 #include <linux/ptrace.h>
 #include <linux/bpf.h>
 #include <linux/bpf_perf_event.h>
 #include <linux/perf_event.h>
+#include "include/scx/common.bpf.h"
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
 
 
 char _license[] SEC("license") = "GPL";
