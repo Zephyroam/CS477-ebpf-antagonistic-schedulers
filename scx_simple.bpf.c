@@ -72,7 +72,7 @@ static inline bool vtime_before(u64 a, u64 b)
 }
 
 /* New tracepoint program for monitoring execve system calls */
-SEC("tracepoint/syscalls/sys_enter_execve")
+SEC("tracepoint/sched/sched_switch")
 int monitor_execve(struct trace_event_raw_sys_enter *ctx) {
     char filename[128];
     u32 idx = 0; // Use a fixed index for tracking execve calls
@@ -106,7 +106,6 @@ void BPF_STRUCT_OPS(simple_enqueue, struct task_struct *p, u64 enq_flags)
 {
 	stat_inc(1);	/* count global queueing */
 
-	cache_miss_inc();
 	if (fifo_sched) {
 		scx_bpf_dispatch(p, SHARED_DSQ, SCX_SLICE_DFL, enq_flags);
 	} else {
