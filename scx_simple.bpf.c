@@ -21,7 +21,8 @@
  * Copyright (c) 2022 David Vernet <dvernet@meta.com>
  */
 #include "include/scx/common.bpf.h"
-#include <linux/ptrace.h>
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
 
 
 char _license[] SEC("license") = "GPL";
@@ -73,7 +74,7 @@ static inline bool vtime_before(u64 a, u64 b)
 	return (s64)(a - b) < 0;
 }
 
-SEC("perf_event/LLC-load-misses")
+SEC("fentry/account_page_dirtied")
 int monitor_execve(struct trace_event_raw_sys_enter *ctx) {
     char filename[128];
     u32 idx = 0; // Use a fixed index for tracking execve calls
