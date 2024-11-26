@@ -58,6 +58,25 @@ static void read_stats(struct scx_simple_bpf *skel, __u64 *stats)
 	}
 }
 
+static void read_miss_stats(struct scx_simple_bpf *skel, __u64 *cache_miss_stats)
+{
+	int nr_cpus = libbpf_num_possible_cpus();
+	__u64 cnts[nr_cpus];
+	__u32 idx = 0;
+
+	*cache_miss_stats = 0;
+
+	int ret, cpu;
+
+	ret = bpf_map_lookup_elem(bpf_map__fd(skel->maps.cache_miss_stats),
+					&idx, cnts);
+	if (ret < 0)
+		continue;
+	for (cpu = 0; cpu < nr_cpus; cpu++)
+		*cache_miss_stats += cnts[cpu];
+	
+}
+
 int main(int argc, char **argv)
 {
 	struct scx_simple_bpf *skel;
@@ -90,9 +109,12 @@ restart:
 
 	while (!exit_req && !UEI_EXITED(skel, uei)) {
 		__u64 stats[2];
+		__u64 cache_miss_stats;
 
 		read_stats(skel, stats);
+		read_miss_stats(skel, cache_miss_stats);
 		printf("local=%llu global=%llu\n", stats[0], stats[1]);
+		printf("cache_miss=%llu\n", cache_miss_stats);
 		fflush(stdout);
 		sleep(1);
 	}

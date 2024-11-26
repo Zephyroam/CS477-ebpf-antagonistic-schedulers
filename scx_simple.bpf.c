@@ -46,10 +46,10 @@ struct {
 } stats SEC(".maps");
 
 struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);   
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__uint(key_size, sizeof(u32));      
 	__uint(value_size, sizeof(u64));    
-	__uint(max_entries, 128);           
+	__uint(max_entries, 1);          
 } cache_miss_stats SEC(".maps");
 
 static void stat_inc(u32 idx)
@@ -59,8 +59,9 @@ static void stat_inc(u32 idx)
 		(*cnt_p)++;
 }
 
-static void cache_miss_inc(u32 cpu) {
-    u64 *count = bpf_map_lookup_elem(&cache_miss_stats, &cpu);
+static void cache_miss_inc() {
+	u32 idx = 0;
+    u64 *count = bpf_map_lookup_elem(&cache_miss_stats, &idx);
     if (count)
 		(*count)++;
 }
@@ -82,7 +83,7 @@ int monitor_execve(struct trace_event_raw_sys_enter *ctx) {
     }
 
     // Increment cache miss stats for the current CPU
-    cache_miss_inc(bpf_get_smp_processor_id());
+    cache_miss_inc();
 
     return 0;
 }
@@ -105,7 +106,7 @@ void BPF_STRUCT_OPS(simple_enqueue, struct task_struct *p, u64 enq_flags)
 {
 	stat_inc(1);	/* count global queueing */
 
-	cache_miss_inc(bpf_get_smp_processor_id());
+	cache_miss_inc();
 	if (fifo_sched) {
 		scx_bpf_dispatch(p, SHARED_DSQ, SCX_SLICE_DFL, enq_flags);
 	} else {
