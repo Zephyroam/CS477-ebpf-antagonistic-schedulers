@@ -71,7 +71,7 @@ static void read_miss_stats(struct scx_simple_bpf *skel, __u64 *cache_miss_stats
 	ret = bpf_map_lookup_elem(bpf_map__fd(skel->maps.cache_miss_stats),
 					&idx, cnts);
 	if (ret < 0)
-		continue;
+		return;
 	for (cpu = 0; cpu < nr_cpus; cpu++)
 		*cache_miss_stats += cnts[cpu];
 	
@@ -112,7 +112,7 @@ restart:
 		__u64 cache_miss_stats;
 
 		read_stats(skel, stats);
-		read_miss_stats(skel, cache_miss_stats);
+		read_miss_stats(skel, &cache_miss_stats);
 		printf("local=%llu global=%llu\n", stats[0], stats[1]);
 		printf("cache_miss=%llu\n", cache_miss_stats);
 		fflush(stdout);
