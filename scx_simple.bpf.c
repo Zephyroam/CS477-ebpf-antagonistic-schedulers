@@ -52,8 +52,6 @@ struct {
 	__uint(max_entries, 128);           
 } cache_miss_stats SEC(".maps");
 
-
-
 static void stat_inc(u32 idx)
 {
 	u64 *cnt_p = bpf_map_lookup_elem(&stats, &idx);
@@ -63,16 +61,30 @@ static void stat_inc(u32 idx)
 
 static void cache_miss_inc(u32 cpu) {
     u64 *count = bpf_map_lookup_elem(&cache_miss_stats, &cpu);
-    if (!count)
-        return;
-
+    if (count)
+		(*count)++;
 }
-
-
 
 static inline bool vtime_before(u64 a, u64 b)
 {
 	return (s64)(a - b) < 0;
+}
+
+/* New tracepoint program for monitoring execve system calls */
+SEC("tracepoint/syscalls/sys_enter_execve")
+int monitor_execve(struct trace_event_raw_sys_enter *ctx) {
+    char filename[128];
+    u32 idx = 0; // Use a fixed index for tracking execve calls
+
+    // Read the filename of the executed program
+    if (bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]) > 0) {
+        bpf_printk("Execve called with filename: %s\n", filename);
+    }
+
+    // Increment cache miss stats for the current CPU
+    cache_miss_inc(bpf_get_smp_processor_id());
+
+    return 0;
 }
 
 s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake_flags)
@@ -176,7 +188,6 @@ s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
     bpf_printk("Simple scheduler initialized successfully.\n");
     return 0;
 }
-
 
 SCX_OPS_DEFINE(simple_ops,
 	       .select_cpu		= (void *)simple_select_cpu,
