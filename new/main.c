@@ -11,6 +11,7 @@
 #include <sys/syscall.h>
 #include <linux/types.h>
 #include <stdint.h>
+#include "cache_misses.bpf.skel.h"
 
 
 #define CHECK(condition, message) \
@@ -20,23 +21,23 @@
     }
 
 int main() {
-    struct bpf_object *obj;
+    struct cache_misses_bpf *skel;
     struct bpf_program *prog;
     struct bpf_map *map;
     int map_fd, prog_fd, perf_fd;
     struct perf_event_attr attr = {};
 
     // Load eBPF program
-    obj = bpf_object__open_file("cache_misses.bpf.o", NULL);
-    CHECK(!obj, "bpf_object__open_file");
+    skel = cache_misses_bpf__open();
+    CHECK(!skel, "bpf_object__open_file");
 
-    CHECK(bpf_object__load(obj), "bpf_object__load");
+    CHECK(cache_misses_bpf__load(skel), "bpf_object__load");
 
     // Get the program and map
-    prog = bpf_object__find_program_by_name(obj, "count_cache_misses");
+    prog = skel->progs.count_cache_misses;
     CHECK(!prog, "bpf_object__find_program_by_name");
 
-    map = bpf_object__find_map_by_name(obj, "cache_misses_map");
+    map = skel->maps.cache_misses_map;
     CHECK(!map, "bpf_object__find_map_by_name");
 
     map_fd = bpf_map__fd(map);
@@ -68,6 +69,6 @@ int main() {
     }
 
     close(perf_fd);
-    bpf_object__close(obj);
+    cache_misses_bpf__destroy(skel);
     return 0;
 }
