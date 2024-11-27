@@ -97,7 +97,7 @@ int main() {
         int cpu_count;
 
         // 为每个 CPU 读取计数
-        cpu_count = bpf_num_possible_cpus();
+        cpu_count = libbpf_num_possible_cpus();
         counts = calloc(cpu_count, sizeof(uint64_t));
         CHECK(!counts, "calloc");
 
