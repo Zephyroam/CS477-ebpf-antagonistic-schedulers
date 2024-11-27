@@ -1,10 +1,17 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <bpf/bpf.h>
 #include <bpf/libbpf.h>
+// #include <bpf/bpf_helpers.h>
+// #include <bpf/bpf_tracing.h>
 #include <linux/perf_event.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/syscall.h>
+#include <linux/types.h>
+#include <stdint.h>
+
 
 #define CHECK(condition, message) \
     if (condition) {              \
@@ -54,8 +61,8 @@ int main() {
 
     // Monitor results
     while (1) {
-        u64 count = 0;
-        CHECK(bpf_map_lookup_elem(map_fd, &(u32){0}, &count), "bpf_map_lookup_elem");
+        uint64_t count = 0;
+        CHECK(bpf_map_lookup_elem(map_fd, &(uint32_t){0}, &count), "bpf_map_lookup_elem");
         printf("CACHE_MISSES: %llu\n", count);
         sleep(1);
     }

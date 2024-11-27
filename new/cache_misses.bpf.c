@@ -1,4 +1,6 @@
-#include <vmlinux.h>
+#include <../include/vmlinux.h>
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
 
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
