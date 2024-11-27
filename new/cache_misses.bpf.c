@@ -1,10 +1,7 @@
-// #include <vmlinux.h>
-// // #include <linux/bpf.h>
-// // #include <linux/types.h>
-// // #include <bpf/libbpf.h>
-// #include <bpf/bpf_helpers.h>
-// #include <bpf/bpf_tracing.h>
-#include "include/scx/common.bpf.h"
+#include "vmlinux.h"
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_tracing.h>
+#include <bpf/bpf_core_read.h>
 
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
