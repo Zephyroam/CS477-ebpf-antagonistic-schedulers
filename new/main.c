@@ -47,8 +47,6 @@ int main() {
     attr.config = PERF_COUNT_HW_CACHE_L1D |
                   (PERF_COUNT_HW_CACHE_OP_READ << 8) |
                   (PERF_COUNT_HW_CACHE_RESULT_MISS << 16);
-    attr.sample_period = 0;
-    attr.sample_type = 0;
     attr.disabled = 0;
     attr.exclude_kernel = 0;
     attr.exclude_hv = 0;
@@ -57,60 +55,61 @@ int main() {
     num_cpus = sysconf(_SC_NPROCESSORS_ONLN);
     CHECK(num_cpus < 1, "sysconf");
 
-    perf_fds = calloc(num_cpus, sizeof(int));
-    CHECK(!perf_fds, "calloc");
+    int perf_fd;
 
     prog_fd = bpf_program__fd(prog);
 
-    // 为每个 CPU 打开性能事件并附加 eBPF 程序
-    for (int i = 0; i < num_cpus; i++) {
-        perf_fds[i] = syscall(__NR_perf_event_open, &attr, -1, i, -1, 0);
-        if (perf_fds[i] < 0) {
-            perror("perf_event_open");
-            continue;
-        }
+    printf("%d", num_cpus);
 
-        err = ioctl(perf_fds[i], PERF_EVENT_IOC_SET_BPF, prog_fd);
-        if (err) {
-            perror("PERF_EVENT_IOC_SET_BPF");
-            close(perf_fds[i]);
-            perf_fds[i] = -1;
-            continue;
-        }
+    perf_fd = syscall(__NR_perf_event_open, &attr, -1, 0, -1, 0);
+    if (perf_fd < 0) {
+        perror("perf_event_open");
+        return 0;
+    }
 
-        err = ioctl(perf_fds[i], PERF_EVENT_IOC_ENABLE, 0);
-        if (err) {
-            perror("PERF_EVENT_IOC_ENABLE");
-            close(perf_fds[i]);
-            perf_fds[i] = -1;
-            continue;
-        }
+    err = ioctl(perf_fd, PERF_EVENT_IOC_RESET, 0);
+    if (err) {
+        perror("PERF_EVENT_IOC_SET_BPF");
+        close(perf_fd);
+        perf_fd = -1;
+        return 0;
+    }
+    err = ioctl(perf_fd, PERF_EVENT_IOC_SET_BPF, prog_fd);
+    if (err) {
+        perror("PERF_EVENT_IOC_SET_BPF");
+        close(perf_fd);
+        perf_fd = -1;
+        return 0;
+    }
+
+    err = ioctl(perf_fd, PERF_EVENT_IOC_ENABLE, 0);
+    if (err) {
+        perror("PERF_EVENT_IOC_ENABLE");
+        close(perf_fd);
+        perf_fd = -1;
+        return 0;
     }
 
     printf("eBPF program successfully attached. Monitoring L1-dcache-load-misses...\n");
 
+    printf("%d", libbpf_num_possible_cpus());
     // 监控结果
     while (1) {
         uint64_t total_count = 0;
         uint32_t key = 0;
-        uint64_t *counts;
-        int cpu_count;
 
-        // 为每个 CPU 读取计数
-        cpu_count = libbpf_num_possible_cpus();
-        counts = calloc(cpu_count, sizeof(uint64_t));
-        CHECK(!counts, "calloc");
 
-        err = bpf_map_lookup_elem(map_fd, &key, counts);
+        err = bpf_map_lookup_elem(map_fd, &key, &total_count);
         CHECK(err, "bpf_map_lookup_elem");
 
-        for (int i = 0; i < cpu_count; i++) {
-            total_count += counts[i];
-        }
-
         printf("L1-dcache-load-misses: %llu\n", total_count);
+        long long count;
+        if (read(perf_fd, &count, sizeof(long long)) == -1) {
+            perror("read");
+            exit(EXIT_FAILURE);
+        }
+        printf("%d\n", count);
 
-        free(counts);
         sleep(1);
     }
 
