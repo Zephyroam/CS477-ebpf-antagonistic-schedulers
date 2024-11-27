@@ -1,13 +1,12 @@
-#include <linux/bpf.h>
-#include <bpf/bpf_helpers.h>
-#include <linux/perf_event.h>
+#include <vmlinux.h>
 
-struct bpf_map_def SEC("maps") cache_misses_map = {
-    .type = BPF_MAP_TYPE_PERCPU_ARRAY,
-    .key_size = sizeof(u32),
-    .value_size = sizeof(u64),
-    .max_entries = 1, // Only one counter
-};
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, u32);
+    __type(value, u64);
+} cache_misses_map SEC(".maps");
+
 
 SEC("perf_event")
 int count_cache_misses(struct bpf_perf_event_value *ctx) {
