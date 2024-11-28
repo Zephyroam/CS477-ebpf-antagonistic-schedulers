@@ -2,7 +2,6 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
-// #include <linux/bpf.h>
 
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
@@ -20,7 +19,7 @@ int count_cache_misses(struct bpf_perf_event_value *ctx) {
     // Access the map and increment the counter
     counter = bpf_map_lookup_elem(&cache_misses_map, &key);
     if (counter) {
-        (*counter) = 1;
+        (*counter)++;
     }
     bpf_printk("GOT QQQQ");
     return 0;

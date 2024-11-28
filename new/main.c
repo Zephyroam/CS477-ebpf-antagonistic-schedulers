@@ -20,8 +20,6 @@ int main() {
     struct bpf_program *prog;
     struct bpf_map *map;
     int map_fd, prog_fd;
-    int num_cpus;
-    int *perf_fds;
     struct perf_event_attr attr = {};
     int err;
 
@@ -44,24 +42,22 @@ int main() {
     // 设置性能事件属性以监控 L1-dcache-load-misses
     attr.type = PERF_TYPE_HW_CACHE;
     attr.size = sizeof(struct perf_event_attr);
-    attr.config = PERF_COUNT_HW_CACHE_L1D |
-                  (PERF_COUNT_HW_CACHE_OP_READ << 8) |
-                  (PERF_COUNT_HW_CACHE_RESULT_MISS << 16);
+    attr.config = (PERF_COUNT_HW_CACHE_L1D |
+                  PERF_COUNT_HW_CACHE_OP_READ << 8 |
+                  PERF_COUNT_HW_CACHE_RESULT_MISS << 16);
     attr.disabled = 0;
-    attr.exclude_kernel = 0;
-    attr.exclude_hv = 0;
-
-    // 获取 CPU 数量
-    num_cpus = sysconf(_SC_NPROCESSORS_ONLN);
-    CHECK(num_cpus < 1, "sysconf");
+    attr.sample_type = PERF_SAMPLE_IP;
+    attr.exclude_kernel = 1;
+    attr.exclude_hv = 1;
+    attr.freq=0;
+    attr.sample_period=1000;
 
     int perf_fd;
 
     prog_fd = bpf_program__fd(prog);
 
-    printf("%d", num_cpus);
 
-    perf_fd = syscall(__NR_perf_event_open, &attr, -1, 0, -1, 0);
+    perf_fd = syscall(SYS_perf_event_open, &attr, -1, 0, -1, 0);
     if (perf_fd < 0) {
         perror("perf_event_open");
         return 0;
@@ -92,7 +88,6 @@ int main() {
 
     printf("eBPF program successfully attached. Monitoring L1-dcache-load-misses...\n");
 
-    printf("%d", libbpf_num_possible_cpus());
     // 监控结果
     while (1) {
         uint64_t total_count = 0;
@@ -113,13 +108,6 @@ int main() {
         sleep(1);
     }
 
-    // 清理资源
-    for (int i = 0; i < num_cpus; i++) {
-        if (perf_fds[i] >= 0) {
-            close(perf_fds[i]);
-        }
-    }
-    free(perf_fds);
     cache_misses_bpf__destroy(skel);
     return 0;
 }
