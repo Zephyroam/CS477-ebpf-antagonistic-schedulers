@@ -2,12 +2,11 @@
 #define _SKYLOFT_EXPERIMENT_COMMON_H_
 
 #include <stdint.h>
+#include "my_time.h"
 
 #include <gflags/gflags.h>
 #include <rocksdb/c.h>
 
-#include <utils/list.h>
-#include <utils/time.h>
 
 DECLARE_string(rocksdb_path);
 DECLARE_int32(rocksdb_cache_size);

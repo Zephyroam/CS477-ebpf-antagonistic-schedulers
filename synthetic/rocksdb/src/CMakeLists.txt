@@ -12,3 +12,5 @@ else ()
     message(FATAL_ERROR "gflags target not defined")
   endif ()
 endif ()
+
+target_link_libraries(shinjuku rocksdb dl)

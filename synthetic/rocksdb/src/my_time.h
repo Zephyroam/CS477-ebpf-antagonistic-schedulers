@@ -1,5 +1,5 @@
-#ifndef _TIME_H_
-#define _TIME_H_
+#ifndef _MY_TIME_H_
+#define _MY_TIME_H_
 
 #include <stdint.h>
 #include <time.h>
@@ -63,4 +63,4 @@ static inline void spin(__nsec duration)
     spin_until(now_ns() + duration);
 }
 
-#endif // _TIME_H_
+#endif // _MY_TIME_H_
