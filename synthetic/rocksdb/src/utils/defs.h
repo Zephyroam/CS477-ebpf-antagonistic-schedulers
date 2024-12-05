@@ -264,7 +264,7 @@ enum {
 
 #define barrier() asm volatile("" ::: "memory")
 
-#define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
+#define ACCESS_ONCE(x) (*(volatile decltype(x) *)&(x))
 
 static __always_inline void __write_once_size(volatile void *p, void *res, int size)
 {
