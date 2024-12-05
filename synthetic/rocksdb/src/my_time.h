@@ -46,13 +46,6 @@ static inline __usec monotonic_us()
     return now_us() - g_boot_time_us;
 }
 
-static inline uint64_t now_tsc()
-{
-    uint32_t lo, hi;
-    asm volatile("rdtscp" : "=a"(lo), "=d"(hi)::"rcx");
-    return ((uint64_t)hi << 32) | lo;
-}
-
 static inline void spin_until(__nsec deadline)
 {
     while (now_ns() < deadline);
