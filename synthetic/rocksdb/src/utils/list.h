@@ -17,9 +17,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-
-#define ACCESS_ONCE(x) (*(volatile typeof(x) *)&(x))
-
+#include <utils/assert.h>
+#include <utils/defs.h>
 
 /**
  * struct list_node - an entry in a doubly-linked list

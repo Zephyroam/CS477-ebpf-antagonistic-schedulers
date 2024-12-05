@@ -6,6 +6,11 @@ file(GLOB SOURCES
 
 add_executable(shinjuku ${SOURCES})
 
+target_include_directories(shinjuku PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/utils
+)
+
 if (GFLAGS_USE_TARGET_NAMESPACE)
   if (TARGET gflags::gflags)
     target_link_libraries(shinjuku gflags::gflags rocksdb dl)

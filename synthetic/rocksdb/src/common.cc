@@ -8,7 +8,7 @@
 
 #include "common.h"
 #include "random.h"
-#include "my_time.h"
+#include "utils/time.h"
 
 DEFINE_string(rocksdb_path, "/tmp/skyloft_rocksdb",
               "The path to the RocksDB database. Creates the database if it does not exist.");
