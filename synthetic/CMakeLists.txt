@@ -1,32 +1,16 @@
-include(${CMAKE_SCRIPTS}/rocksdb.mk)
+cmake_minimum_required(VERSION 3.21)
 
-set(COMMON_SRCS rocksdb/random.cc rocksdb/common.cc)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-if (UINTR)
-    if (SCHED_POLICY STREQUAL "sq")
-        add_executable(shinjuku rocksdb/shinjuku.cc ${COMMON_SRCS})
-        target_link_libraries(shinjuku PRIVATE
-            skyloft
-            librocksdb
-            z
-            gflags
-            snappy
-        )
-        target_include_directories(shinjuku PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb)
-    elseif (SCHED_POLICY STREQUAL "sq_lcbe")
-        add_executable(shinjuku rocksdb/shinjuku.cc ${COMMON_SRCS})
-        target_link_libraries(shinjuku PRIVATE
-            skyloft
-            librocksdb
-            z
-            gflags
-            snappy
-        )
-        target_include_directories(shinjuku PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb)
+# set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-        set(ANTAGONIST_SOURCES antagonist/main.cc)
-        add_executable(antagonist ${ANTAGONIST_SOURCES})
-        target_link_libraries(antagonist PRIVATE skyloft gflags)
-        target_include_directories(antagonist PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb)
-    endif()
-endif()
+project(MyProject)
+
+find_package(gflags REQUIRED)
+
+add_subdirectory(external/rocksdb)
+
+# add_subdirectory(src/rocksdb)
+add_subdirectory(src/antagonist)
