@@ -4,6 +4,10 @@
 #include <bits/types.h>
 #include <utils/time_utils.h>
 
+
+#define USED_CPUS        24
+
+
 DEFINE_int32(run_time, 5, "Running time (s) of the experiment.");
 DEFINE_double(period, 100, "For each period (ms), the worker uses a fixed share of CPU time.");
 DEFINE_int32(num_workers, 1, "The number of workers.");
@@ -41,7 +45,7 @@ static void synthetic_worker(void *arg)
         /* nth period */
         n = (now_ns() - worker->start + period - 1) / period;
         if (n <= worker->nth) {
-            sl_task_yield();
+            // sl_task_yield();
             continue;
         }
         worker->nth = n;
@@ -52,7 +56,7 @@ static void synthetic_worker(void *arg)
         while (now_ns() < finish && (usage = now_ns() - usage_start) < share);
         worker->usage += usage;
 
-        sl_task_yield();
+        // sl_task_yield();
     }
 }
 
@@ -78,7 +82,6 @@ static void antagonist_main(void *arg)
     int i;
     __nsec usage = 0;
 
-    printf("Antagonist %d starts on CPU %d\n", sl_current_app_id(), sl_current_cpu_id());
 
     for (i = 0; i < FLAGS_num_workers; i++) {
         workers[i].start = 0;
@@ -87,10 +90,12 @@ static void antagonist_main(void *arg)
     }
 
     for (i = 1; i < FLAGS_num_workers + 1; i++) {
-        sl_task_spawn_oncpu(i, synthetic_worker, (void *)&workers[i], 0);
+        pthread_t thread;
+        pthread_create(&thread, NULL, (void *(*)(void *))synthetic_worker, (void *)&workers[i]);
+        pthread_detach(thread);
+        // sl_task_spawn_oncpu(i, synthetic_worker, (void *)&workers[i], 0);
     }
 
-    sl_task_yield();
 
     write_results();
 
@@ -109,5 +114,5 @@ int main(int argc, char **argv)
     gflags::ShutDownCommandLineFlags();
 
     printf("Antagonist with %d thread(s)\n", FLAGS_num_workers);
-    sl_libos_start(antagonist_main, NULL);
+    antagonist_main(NULL);
 }
