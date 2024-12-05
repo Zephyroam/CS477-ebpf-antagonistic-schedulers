@@ -12,5 +12,5 @@ find_package(gflags REQUIRED)
 
 add_subdirectory(external/rocksdb)
 
-# add_subdirectory(src/rocksdb)
+add_subdirectory(src/rocksdb)
 add_subdirectory(src/antagonist)
