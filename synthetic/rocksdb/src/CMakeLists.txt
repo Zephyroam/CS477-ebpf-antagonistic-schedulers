@@ -4,6 +4,8 @@ file(GLOB SOURCES
     "*.h"
 )
 
+add_definitions(-D_GNU_SOURCE)
+
 add_executable(shinjuku ${SOURCES})
 
 target_include_directories(shinjuku PRIVATE

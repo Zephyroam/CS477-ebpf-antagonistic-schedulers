@@ -5,6 +5,7 @@
 #pragma once
 
 #include <bits/types.h>
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -266,7 +267,7 @@ enum {
 
 #define ACCESS_ONCE(x) (*(volatile decltype(x) *)&(x))
 
-static __always_inline void __write_once_size(volatile void *p, void *res, int size)
+static inline void __write_once_size(volatile void *p, void *res, int size)
 {
     switch (size) {
     case 1:
