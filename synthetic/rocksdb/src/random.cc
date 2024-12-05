@@ -1,5 +1,5 @@
 #include <random>
-
+#include <ctime>
 #include "random.h"
 
 static std::mt19937 rng;
