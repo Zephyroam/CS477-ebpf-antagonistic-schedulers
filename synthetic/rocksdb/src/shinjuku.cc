@@ -9,12 +9,7 @@
 #include <gflags/gflags.h>
 #include <rocksdb/c.h>
 
-#include <skyloft/uapi/params.h>
-#include <utils/list.h>
-#include <utils/log.h>
-#include <utils/spinlock.h>
-#include <utils/time.h>
-
+#include "time.h"
 #include "common.h"
 #include "random.h"
 

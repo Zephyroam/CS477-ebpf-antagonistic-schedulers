@@ -5,7 +5,6 @@
 #include <climits>
 #include <vector>
 
-#include <skyloft/uapi/task.h>
 
 #include "common.h"
 #include "random.h"
