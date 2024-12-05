@@ -3,6 +3,7 @@
 
 #include <bits/types.h>
 #include <utils/time_utils.h>
+#include <pthread.h>
 
 
 #define USED_CPUS        24
