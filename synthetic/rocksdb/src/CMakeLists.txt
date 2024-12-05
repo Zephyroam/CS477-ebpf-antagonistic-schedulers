@@ -1,4 +1,4 @@
-add_executable(shinjuku main.cc)
+add_executable(shinjuku shinjuku.cc)
 if (GFLAGS_USE_TARGET_NAMESPACE)
   if (TARGET gflags::gflags)
     target_link_libraries(shinjuku gflags::gflags)
