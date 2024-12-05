@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "my_time.h"
+#include "list.h"
 
 #include <gflags/gflags.h>
 #include <rocksdb/c.h>
