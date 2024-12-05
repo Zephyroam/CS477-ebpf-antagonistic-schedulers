@@ -1,6 +1,0 @@
-[submodule "gflags"]
-	path = gflags
-	url = https://github.com/gflags/gflags.git
-[submodule "rocksdb"]
-    path = rocksdb
-    url = https://github.com/facebook/rocksdb

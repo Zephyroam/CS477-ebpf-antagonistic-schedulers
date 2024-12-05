@@ -1,0 +1,6 @@
+[submodule "synthetic/rocksdb/external/gflags"]
+	path = synthetic/rocksdb/external/gflags
+	url = https://github.com/gflags/gflags.git
+[submodule "synthetic/rocksdb/external/gflags"]
+    path = synthetic/rocksdb/external/rocksdb
+    url = https://github.com/facebook/rocksdb.git
