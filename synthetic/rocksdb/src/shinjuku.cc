@@ -10,7 +10,7 @@
 #include <gflags/gflags.h>
 #include <rocksdb/c.h>
 
-#include "my_time.h"
+#include "utils/time_utils.h"
 #include "common.h"
 #include "random.h"
 

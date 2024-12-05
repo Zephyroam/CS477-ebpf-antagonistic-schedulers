@@ -3,7 +3,7 @@
 
 #include <skyloft/uapi/params.h>
 #include <skyloft/uapi/task.h>
-#include <utils/time.h>
+#include <utils/time_utils.h>
 
 DEFINE_int32(run_time, 5, "Running time (s) of the experiment.");
 DEFINE_double(period, 100, "For each period (ms), the worker uses a fixed share of CPU time.");

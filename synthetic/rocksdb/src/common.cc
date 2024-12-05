@@ -4,11 +4,13 @@
 
 #include <climits>
 #include <vector>
+#include <algorithm>
 
 
 #include "common.h"
 #include "random.h"
-#include "utils/time.h"
+#include "utils/time_utils.h"
+
 
 DEFINE_string(rocksdb_path, "/tmp/skyloft_rocksdb",
               "The path to the RocksDB database. Creates the database if it does not exist.");
@@ -72,8 +74,8 @@ static void write_percentiles(std::vector<uint64_t> &results, FILE *file, bool s
 void write_lat_results_detailed(int issued, request_t *reqs)
 {
     char fname[256];
-    sprintf(fname, "%s/rocksdb_%s_%s_%.1f_%.1f_%.3f_%.2f_%d_%ld", FLAGS_output_path.c_str(),
-            program_invocation_short_name, sl_sched_policy_name(),
+    sprintf(fname, "%s/rocksdb_%s_%.1f_%.1f_%.3f_%.2f_%d_%ld", FLAGS_output_path.c_str(),
+            program_invocation_short_name,
             (double)FLAGS_get_service_time / NSEC_PER_USEC,
             (double)FLAGS_range_query_service_time / NSEC_PER_USEC, FLAGS_range_query_ratio,
             FLAGS_load, FLAGS_num_workers, time(NULL));

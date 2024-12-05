@@ -7,7 +7,7 @@
 #include <rocksdb/c.h>
 
 #include "utils/list.h"
-#include "utils/time.h"
+#include "utils/time_utils.h"
 
 DECLARE_string(rocksdb_path);
 DECLARE_int32(rocksdb_cache_size);

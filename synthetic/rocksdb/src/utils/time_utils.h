@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <unistd.h>
+#include <chrono>
 
 typedef uint64_t __sec;
 typedef uint64_t __nsec;
@@ -26,18 +27,18 @@ typedef uint64_t __usec;
 
 extern __usec g_boot_time_us;
 
-static inline __nsec now_ns()
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    return ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
+static inline __nsec now_ns() {
+    using namespace std::chrono;
+    auto now = high_resolution_clock::now();
+    auto duration = now.time_since_epoch();
+    return duration_cast<nanoseconds>(duration).count();
 }
 
-static inline __usec now_us()
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    return ts.tv_sec * USEC_PER_SEC + ts.tv_nsec / NSEC_PER_USEC;
+static inline __usec now_us() {
+    using namespace std::chrono;
+    auto now = high_resolution_clock::now();
+    auto duration = now.time_since_epoch();
+    return duration_cast<microseconds>(duration).count();
 }
 
 /// Return monotonic time in microseconds since system boot.
