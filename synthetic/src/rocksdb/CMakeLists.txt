@@ -9,8 +9,9 @@ add_definitions(-D_GNU_SOURCE)
 add_executable(shinjuku ${SOURCES})
 
 target_include_directories(shinjuku PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/utils
+    ${CMAKE_CURRENT_SOURCE_DIR}/
+    ${CMAKE_CURRENT_SOURCE_DIR}/../
+    ${CMAKE_CURRENT_SOURCE_DIR}/../utils
 )
 
 if (GFLAGS_USE_TARGET_NAMESPACE)
