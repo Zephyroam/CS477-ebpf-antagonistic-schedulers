@@ -40,22 +40,32 @@ static void sigint_handler(int simple)
 
 static void read_stats(struct scx_simple_bpf *skel, __u64 *stats)
 {
-	int nr_cpus = libbpf_num_possible_cpus();
-	__u64 cnts[2][nr_cpus];
-	__u32 idx;
+    int nr_cpus = libbpf_num_possible_cpus();
+    __u32 idx;
+    __u64 *values;
 
-	memset(stats, 0, sizeof(stats[0]) * 2);
+    memset(stats, 0, sizeof(__u64) * 3);
 
-	for (idx = 0; idx < 2; idx++) {
-		int ret, cpu;
+    // Allocate buffer for per-CPU values
+    values = calloc(nr_cpus, sizeof(__u64));
+    if (!values) {
+        fprintf(stderr, "Failed to allocate memory for per-CPU stats\n");
+        return;
+    }
 
-		ret = bpf_map_lookup_elem(bpf_map__fd(skel->maps.stats),
-					  &idx, cnts[idx]);
-		if (ret < 0)
-			continue;
-		for (cpu = 0; cpu < nr_cpus; cpu++)
-			stats[idx] += cnts[idx][cpu];
-	}
+    for (idx = 0; idx < 3; idx++) {
+        int ret;
+
+        ret = bpf_map_lookup_elem(bpf_map__fd(skel->maps.stats), &idx, values);
+        if (ret < 0) {
+            fprintf(stderr, "Failed to lookup stats[%u]: %d\n", idx, ret);
+            continue;
+        }
+        for (int cpu = 0; cpu < nr_cpus; cpu++)
+            stats[idx] += values[cpu];
+    }
+
+    free(values);
 }
 
 static void read_miss_stats(struct scx_simple_bpf *skel, __u64 *cache_miss_stats)
@@ -108,12 +118,12 @@ restart:
 	link = SCX_OPS_ATTACH(skel, simple_ops, scx_simple_bpf);
 
 	while (!exit_req && !UEI_EXITED(skel, uei)) {
-		__u64 stats[2];
+		__u64 stats[3];
 		__u64 cache_miss_stats;
 
 		read_stats(skel, stats);
 		read_miss_stats(skel, &cache_miss_stats);
-		printf("local=%llu global=%llu\n", stats[0], stats[1]);
+		printf("local=%llu global=%llu\n, local_depth=%llu\n", stats[0], stats[1], stats[2]);
 		printf("cache_miss=%llu\n", cache_miss_stats);
 		fflush(stdout);
 		sleep(1);
