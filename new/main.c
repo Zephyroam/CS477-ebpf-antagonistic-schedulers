@@ -49,7 +49,7 @@ struct perf_event_attr *create_perf_event_attr_for_cache_loads() {
     attr->size = sizeof(struct perf_event_attr);
     attr->config = (PERF_COUNT_HW_CACHE_L1D |
                     PERF_COUNT_HW_CACHE_OP_READ << 8 |
-                    PERF_COUNT_HW_CACHE_RESULT_MISS << 16);
+                    PERF_COUNT_HW_CACHE_RESULT_ACCESS << 16);
     attr->disabled = 0;
     attr->sample_type = PERF_SAMPLE_IP;
     attr->exclude_kernel = 1;
@@ -70,6 +70,14 @@ int open_and_load_bpf_program(struct bpf_program *prog, struct perf_event_attr *
         return -1;
     }
 
+    // printout attr
+    printf("attr->type: %d\n", attr->type);
+    printf("attr->size: %d\n", attr->size);
+    printf("attr->config: %d\n", attr->config);
+    printf("attr->disabled: %d\n", attr->disabled);
+    printf("attr->sample_type: %d\n", attr->sample_type);
+    printf("attr->exclude_kernel: %d\n", attr->exclude_kernel);
+    printf("attr->exclude_hv: %d\n", attr->exclude_hv);
     perf_fd = syscall(SYS_perf_event_open, attr, -1, cpu, -1, 0);
     if (perf_fd < 0) {
         perror("perf_event_open");
