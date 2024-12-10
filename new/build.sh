@@ -5,4 +5,4 @@ gcc -o cache_misses main.c -lbpf -I.
 
 clang -O2 -g -target bpf -c scx_simple.bpf.c -o scx_simple.bpf.o -I.
 bpftool gen skeleton scx_simple.bpf.o > scx_simple.bpf.skel.h
-gcc -o scx_simple scx_simple.c -lbpf -I. -I..
+gcc -o scx_simple scx_simple.c -lbpf -I.
