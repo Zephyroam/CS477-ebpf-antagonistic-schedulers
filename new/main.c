@@ -22,6 +22,7 @@ struct perf_event_attr *create_perf_event_attr_for_cache_misses() {
         perror("malloc");
         exit(EXIT_FAILURE);
     }
+    memset(attr, 0, sizeof(struct perf_event_attr));
 
     attr->type = PERF_TYPE_HW_CACHE;
     attr->size = sizeof(struct perf_event_attr);
