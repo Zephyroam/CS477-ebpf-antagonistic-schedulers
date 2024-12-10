@@ -6,6 +6,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <sys/syscall.h>
+#include <sys/sysinfo.h>
 #include <stdint.h>
 #include "cache_misses.bpf.skel.h"
 
@@ -174,7 +175,7 @@ int main() {
         err = bpf_map_lookup_elem(cache_loads_map_fd, &key, cpu_counts);
         CHECK(err, "Failed to read from BPF map");
 
-        uint64_t total_count = 0;
+        total_count = 0;
         printf("Per-CPU L1-dcache-loads:\n");
         for (int i = 0; i < num_cpus; i++) {
             printf("  CPU %d: %llu\n", i, cpu_counts[i]);
@@ -187,6 +188,7 @@ int main() {
 
     free(cpu_counts);
     cache_misses_bpf__destroy(skel);
-    close(perf_fd);
+    close(perf_fd_cache_misses);
+    close(perf_fd_cache_loads);
     return 0;
 }
