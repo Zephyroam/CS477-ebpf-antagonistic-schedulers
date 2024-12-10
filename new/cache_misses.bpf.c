@@ -5,18 +5,18 @@
 
 
 struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);  // Change to per-CPU array
-    __uint(max_entries, 1);                   // One entry per CPU
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
     __type(key, u32);
     __type(value, u64);
-} cache_misses_map SEC(".maps")
+} cache_misses_map SEC(".maps");
 
 struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);  // Change to per-CPU array
-    __uint(max_entries, 1);                   // One entry per CPU
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
     __type(key, u32);
     __type(value, u64);
-} cache_loads_map SEC(".maps")
+} cache_loads_map SEC(".maps");
 
 
 SEC("perf_event")
