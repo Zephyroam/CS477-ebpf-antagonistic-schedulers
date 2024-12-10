@@ -70,14 +70,6 @@ int open_and_load_bpf_program(struct bpf_program *prog, struct perf_event_attr *
         return -1;
     }
 
-    // printout attr
-    printf("attr->type: %d\n", attr->type);
-    printf("attr->size: %d\n", attr->size);
-    printf("attr->config: %d\n", attr->config);
-    printf("attr->disabled: %d\n", attr->disabled);
-    printf("attr->sample_type: %d\n", attr->sample_type);
-    printf("attr->exclude_kernel: %d\n", attr->exclude_kernel);
-    printf("attr->exclude_hv: %d\n", attr->exclude_hv);
     perf_fd = syscall(SYS_perf_event_open, attr, -1, cpu, -1, 0);
     if (perf_fd < 0) {
         perror("perf_event_open");
@@ -153,6 +145,7 @@ int main() {
     CHECK(!perf_fds_cache_misses || !perf_fds_cache_loads, "Failed to allocate memory for perf_fds");
 
     for (int cpu = 0; cpu < num_cpus; cpu++) {
+        printf("Attaching eBPF program to CPU %d\n", cpu);
         perf_fds_cache_misses[cpu] = open_and_load_bpf_program(count_cache_misses_prog, attr_cache_misses, cpu);
         CHECK(perf_fds_cache_misses[cpu] < 0, "open_and_load_bpf_program for cache misses");
 
