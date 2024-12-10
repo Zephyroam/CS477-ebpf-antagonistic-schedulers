@@ -21,7 +21,10 @@
  * Copyright (c) 2022 David Vernet <dvernet@meta.com>
  */
 #include "include/scx/common.bpf.h"
-// #include "new/shared_maps.h"
+// #include <linux/perf_event.h>
+// #include <bpf/bpf_helpers.h>
+// #include <bpf/bpf_tracing.h>
+
 
 char _license[] SEC("license") = "GPL";
 
@@ -39,6 +42,18 @@ UEI_DEFINE(uei);
  */
 #define SHARED_DSQ 0
 
+struct task_ctx {
+	bool isLimited;
+	u64 last_cache_miss_rate;
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_TASK_STORAGE);
+	__uint(map_flags, BPF_F_NO_PREALLOC);
+	__type(key, int);
+	__type(value, struct task_ctx);
+} task_ctx_stor SEC(".maps");
+
 struct {
 	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
 	__uint(key_size, sizeof(u32));
@@ -46,14 +61,47 @@ struct {
 	__uint(max_entries, 2);			/* [local, global] */
 } stats SEC(".maps");
 
+
 struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);  // Change to per-CPU array
-    __uint(max_entries, 64);                   // One entry per CPU
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
     __type(key, u32);
     __type(value, u64);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);      // Enable map sharing
-    __uint(map_flags, BPF_F_PRESERVE_ELEMS);  // Preserve values
-} cache_misses_map SEC(".maps") __weak;       // __weak allows sharing
+} cache_misses_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, u32);
+    __type(value, u64);
+} cache_loads_map SEC(".maps");
+
+
+SEC("perf_event")
+int count_cache_misses(struct bpf_perf_event_value *ctx) {
+    u64 *counter;
+    u32 key = 0;
+
+    // Access the map and increment the counter
+    counter = bpf_map_lookup_elem(&cache_misses_map, &key);
+    if (counter) {
+        (*counter)++;
+    }
+    return 0;
+}
+
+SEC("perf_event")
+int count_cache_loads(struct bpf_perf_event_value *ctx) {
+    u64 *counter;
+    u32 key = 0;
+
+    // Access the map and increment the counter
+    counter = bpf_map_lookup_elem(&cache_loads_map, &key);
+    if (counter) {
+        (*counter)++;
+    }
+    return 0;
+}
 
 
 
@@ -64,12 +112,26 @@ static void stat_inc(u32 idx)
 		(*cnt_p)++;
 }
 
+
+
 static inline bool vtime_before(u64 a, u64 b)
 {
 	return (s64)(a - b) < 0;
 }
 
+SEC("perf_event")
+int monitor_execve(struct trace_event_raw_sys_enter *ctx) {
+    char filename[128];
+    u32 idx = 0; // Use a fixed index for tracking execve calls
 
+    // Read the filename of the executed program
+    if (bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]) > 0) {
+        bpf_printk("Execve called with filename: %s\n", filename);
+    }
+
+
+    return 0;
+}
 
 s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake_flags)
 {
@@ -87,18 +149,23 @@ s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 w
 
 void BPF_STRUCT_OPS(simple_enqueue, struct task_struct *p, u64 enq_flags)
 {
-    stat_inc(1);    /* count global queueing */
-    u64 vtime = p->scx.dsq_vtime;
+	stat_inc(1);	/* count global queueing */
 
-	/*
-		* Limit the amount of budget that an idling task can accumulate
-		* to one slice.
-		*/
-	if (vtime_before(vtime, vtime_now - SCX_SLICE_DFL))
-		vtime = vtime_now - SCX_SLICE_DFL;
+	if (fifo_sched) {
+		scx_bpf_dispatch(p, SHARED_DSQ, SCX_SLICE_DFL, enq_flags);
+	} else {
+		u64 vtime = p->scx.dsq_vtime;
 
-	scx_bpf_dispatch_vtime(p, SHARED_DSQ, SCX_SLICE_DFL, vtime,
-					enq_flags);
+		/*
+		 * Limit the amount of budget that an idling task can accumulate
+		 * to one slice.
+		 */
+		if (vtime_before(vtime, vtime_now - SCX_SLICE_DFL))
+			vtime = vtime_now - SCX_SLICE_DFL;
+
+		scx_bpf_dispatch_vtime(p, SHARED_DSQ, SCX_SLICE_DFL, vtime,
+				       enq_flags);
+	}
 }
 
 void BPF_STRUCT_OPS(simple_dispatch, s32 cpu, struct task_struct *prev)
@@ -117,6 +184,23 @@ void BPF_STRUCT_OPS(simple_running, struct task_struct *p)
 	 */
 	if (vtime_before(vtime_now, p->scx.dsq_vtime))
 		vtime_now = p->scx.dsq_vtime;
+
+	// record current cache miss rate(misses/loades) for the current CPU
+	u64 *cache_misses;
+	u64 *cache_loads;
+	u32 key = 0;
+
+	cache_misses = bpf_map_lookup_elem(&cache_misses_map, &key);
+	cache_loads = bpf_map_lookup_elem(&cache_loads_map, &key);
+
+	if (cache_misses && cache_loads) {
+		struct task_ctx *tctx = bpf_task_storage_get(&task_ctx_stor, p, 0, 0);
+		if (tctx) {
+			tctx->last_cache_miss_rate = *cache_misses / *cache_loads;
+		}
+	}
+	
+
 }
 
 void BPF_STRUCT_OPS(simple_stopping, struct task_struct *p, bool runnable)
@@ -130,21 +214,36 @@ void BPF_STRUCT_OPS(simple_stopping, struct task_struct *p, bool runnable)
 	 * too much, determine the execution time by taking explicit timestamps
 	 * instead of depending on @p->scx.slice.
 	 */
-	s32 cpu = bpf_get_smp_processor_id();
-	
-	// get the cache miss stats from cache_misses.bpf.c 
-	int *fd = bpf_map_lookup_elem(&cache_misses_map, &cpu);
-	// if cache miss stat > 500, sync do the p->nr_cpus_allowed - 1
-	if (fd && *fd > 500) {
-		p->nr_cpus_allowed = 1;
-	}
+
 
 	p->scx.dsq_vtime += (SCX_SLICE_DFL - p->scx.slice) * 100 / p->scx.weight;
+
+	// Re record current cache miss rate(misses/loades) for the current CPU, compare it with the last cache miss rate
+	// compute the change rate, if it is greater than 5%, set the task as limited
+	u64 *cache_misses;
+	u64 *cache_loads;
+	u32 key = 0;
+
+	cache_misses = bpf_map_lookup_elem(&cache_misses_map, &key);
+	cache_loads = bpf_map_lookup_elem(&cache_loads_map, &key);
+
+	if (cache_misses && cache_loads) {
+		struct task_ctx *tctx = bpf_task_storage_get(&task_ctx_stor, p, 0, 0);
+		if (tctx) {
+			u64 current_cache_miss_rate = *cache_misses / *cache_loads;
+			u64 change_rate = (current_cache_miss_rate - tctx->last_cache_miss_rate) / tctx->last_cache_miss_rate;
+			if (change_rate > 0.05) {
+				tctx->isLimited = true;
+			}
+		}
+	}
+
 }
 
 void BPF_STRUCT_OPS(simple_enable, struct task_struct *p)
 {
 	p->scx.dsq_vtime = vtime_now;
+
 }
 
 /* Scheduler init*/
@@ -159,13 +258,7 @@ s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
         return ret;
     }
 
-    // verify that the cache_miss_events map is initialized
-    u32 cpu = 0;
-    int *fd = bpf_map_lookup_elem(&cache_misses_map, &cpu);
-    if (!fd) {
-        bpf_printk("cache_miss_events map not initialized by userspace!\n");
-        return -EINVAL; 
-    }
+
 
     bpf_printk("Simple scheduler initialized successfully.\n");
     return 0;

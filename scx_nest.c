@@ -11,9 +11,9 @@
 #include <libgen.h>
 #include <bpf/bpf.h>
 #include "include/scx/common.h"
-
-#include "scx_nest.bpf.skel.h"
 #include "scx_nest.h"
+#include "scx_nest.bpf.skel.h"
+
 
 #define SAMPLING_CADENCE_S 2
 

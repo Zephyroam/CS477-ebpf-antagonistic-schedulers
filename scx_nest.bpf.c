@@ -24,7 +24,7 @@
  * Copyright (c) 2023 Tejun Heo <tj@kernel.org>
  */
 #include "include/scx/common.bpf.h"
-#include "sdt_task.h"
+//#include "sdt_task.h"
 
 #include "scx_nest.h"
 
@@ -48,7 +48,7 @@ const volatile u64 p_remove_ns = 2 * NSEC_PER_MSEC;
 const volatile u64 r_max = 5;
 const volatile u64 r_impatient = 2;
 const volatile u64 slice_ns;
-
+const volatile bool find_fully_idle = true;
 const volatile u64 sampling_cadence_ns = 1 * NSEC_PER_SEC;
 const volatile u64 r_depth = 5;
 
@@ -322,7 +322,7 @@ migrate_primary:
     }
     bpf_cpumask_set_cpu(cpu, primary);
     if (bpf_cpumask_test_cpu(cpu, cast_mask(reserve))) {
-        __sync_sub_and_fetch(&nr_reserved, 1);
+        __sync_fetch_and_add(&nr_reserved, -1);
         bpf_cpumask_clear_cpu(cpu, reserve);
     }
     bpf_rcu_read_unlock();
@@ -518,7 +518,7 @@ s32 BPF_STRUCT_OPS_SLEEPABLE(nest_init)
 	struct bpf_timer *timer;
 	u32 key = 0;
 
-	err = scx_bpf_create_dsq(FALLBACK_DSQ_ID, NUMA_NO_NODE);
+	err = scx_bpf_create_dsq(FALLBACK_DSQ_ID, -1);
 	if (err) {
 		scx_bpf_error("Failed to create fallback DSQ");
 		return err;
