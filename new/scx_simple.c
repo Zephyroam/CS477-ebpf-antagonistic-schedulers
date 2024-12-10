@@ -224,6 +224,7 @@ restart:
     int cache_misses_map_fd, cache_loads_map_fd;
     struct perf_event_attr *attr_cache_misses;
     struct perf_event_attr *attr_cache_loads;
+	int err;
 	
     count_cache_misses_prog = skel->progs.count_cache_misses;
     CHECK(!count_cache_misses_prog, "skel->progs.count_cache_misses");
