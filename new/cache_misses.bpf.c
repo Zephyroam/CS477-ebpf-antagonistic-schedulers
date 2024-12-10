@@ -9,18 +9,14 @@ struct {
     __uint(max_entries, 1);                   // One entry per CPU
     __type(key, u32);
     __type(value, u64);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);      // Enable map sharing
-    __uint(map_flags, BPF_F_PRESERVE_ELEMS);  // Preserve values
-} cache_misses_map SEC(".maps") __weak;       // __weak allows sharing
+} cache_misses_map SEC(".maps")
 
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);  // Change to per-CPU array
     __uint(max_entries, 1);                   // One entry per CPU
     __type(key, u32);
     __type(value, u64);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);      // Enable map sharing
-    __uint(map_flags, BPF_F_PRESERVE_ELEMS);  // Preserve values
-} cache_loads_map SEC(".maps") __weak;       // __weak allows sharing
+} cache_loads_map SEC(".maps")
 
 
 SEC("perf_event")
