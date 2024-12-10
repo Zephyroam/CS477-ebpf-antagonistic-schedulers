@@ -21,10 +21,7 @@
  * Copyright (c) 2022 David Vernet <dvernet@meta.com>
  */
 #include "include/scx/common.bpf.h"
-// #include <linux/perf_event.h>
-// #include <bpf/bpf_helpers.h>
-// #include <bpf/bpf_tracing.h>
-
+// #include "new/shared_maps.h"
 
 char _license[] SEC("license") = "GPL";
 
@@ -43,26 +40,20 @@ UEI_DEFINE(uei);
 #define SHARED_DSQ 0
 
 struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-    __uint(key_size, sizeof(u32));
-    __uint(value_size, sizeof(u64));
-    __uint(max_entries, 3);  /* [local, global, local_depth] */
+	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+	__uint(key_size, sizeof(u32));
+	__uint(value_size, sizeof(u64));
+	__uint(max_entries, 2);			/* [local, global] */
 } stats SEC(".maps");
 
 struct {
-	__uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-	__uint(key_size, sizeof(u32));      
-	__uint(value_size, sizeof(u64));    
-	__uint(max_entries, 1);          
-} cache_miss_stats SEC(".maps");
-
-struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-    __uint(key_size, sizeof(u32));
-    __uint(value_size, sizeof(u32));  // Record depth of local DSQ
-    __uint(max_entries, 1);           // Single key
-} local_dsq_depth SEC(".maps");
-
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);  // Change to per-CPU array
+    __uint(max_entries, 64);                   // One entry per CPU
+    __type(key, u32);
+    __type(value, u64);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);      // Enable map sharing
+    __uint(map_flags, BPF_F_PRESERVE_ELEMS);  // Preserve values
+} cache_misses_map SEC(".maps") __weak;       // __weak allows sharing
 
 
 
@@ -73,119 +64,50 @@ static void stat_inc(u32 idx)
 		(*cnt_p)++;
 }
 
-static void cache_miss_inc() {
-	u32 idx = 0;
-    u64 *count = bpf_map_lookup_elem(&cache_miss_stats, &idx);
-    if (count)
-		(*count)++;
-}
-
 static inline bool vtime_before(u64 a, u64 b)
 {
 	return (s64)(a - b) < 0;
 }
 
-SEC("perf_event")
-int monitor_execve(struct trace_event_raw_sys_enter *ctx) {
-    char filename[128];
-    u32 idx = 0; // Use a fixed index for tracking execve calls
 
-    // Read the filename of the executed program
-    if (bpf_probe_read_user_str(&filename, sizeof(filename), (void *)ctx->args[0]) > 0) {
-        bpf_printk("Execve called with filename: %s\n", filename);
-    }
-
-    // Increment cache miss stats for the current CPU
-    cache_miss_inc();
-
-    return 0;
-}
 
 s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake_flags)
 {
-	
-    bool is_idle = false;
-    s32 cpu;
+	bool is_idle = false;
+	s32 cpu;
 
-    cpu = scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle);
-    if (is_idle) {
-        //stat_inc(0);  /* Count local queueing */
+	cpu = scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle);
+	if (is_idle) {
+		stat_inc(0);	/* count local queueing */
+		scx_bpf_dispatch(p, SCX_DSQ_LOCAL, SCX_SLICE_DFL, 0);
+	}
 
-        u32 key = 0;  // Single key
-        u32 *depth_p = bpf_map_lookup_elem(&local_dsq_depth, &key);
-        if (depth_p && *depth_p < 4) {
-            scx_bpf_dispatch(p, SCX_DSQ_LOCAL, SCX_SLICE_DFL, 0);
-            (*depth_p)++;  // Increase depth
-			bpf_printk("depth: %u\n", *depth_p);
-            /* Update stats[2] */
-            u32 idx = 2;
-            u64 depth = *depth_p;
-            bpf_map_update_elem(&stats, &idx, &depth, BPF_ANY);
-        } else {
-            bpf_printk("Local queue is full, task not dispatched.\n");
-
-            /* Fallback to shared DSQ */
-            u64 vtime = p->scx.dsq_vtime;
-            if (vtime_before(vtime, vtime_now - SCX_SLICE_DFL))
-                vtime = vtime_now - SCX_SLICE_DFL;
-
-            scx_bpf_dispatch_vtime(p, SHARED_DSQ, SCX_SLICE_DFL, vtime, wake_flags);
-        }
-    }
-    return cpu;
+	return cpu;
 }
-
 
 void BPF_STRUCT_OPS(simple_enqueue, struct task_struct *p, u64 enq_flags)
 {
-	stat_inc(1);	/* count global queueing */
+    stat_inc(1);    /* count global queueing */
+    u64 vtime = p->scx.dsq_vtime;
 
-	if (fifo_sched) {
-		scx_bpf_dispatch(p, SHARED_DSQ, SCX_SLICE_DFL, enq_flags);
-	} else {
-		u64 vtime = p->scx.dsq_vtime;
+	/*
+		* Limit the amount of budget that an idling task can accumulate
+		* to one slice.
+		*/
+	if (vtime_before(vtime, vtime_now - SCX_SLICE_DFL))
+		vtime = vtime_now - SCX_SLICE_DFL;
 
-		/*
-		 * Limit the amount of budget that an idling task can accumulate
-		 * to one slice.
-		 */
-		if (vtime_before(vtime, vtime_now - SCX_SLICE_DFL))
-			vtime = vtime_now - SCX_SLICE_DFL;
-
-		scx_bpf_dispatch_vtime(p, SHARED_DSQ, SCX_SLICE_DFL, vtime,
-				       enq_flags);
-	}
+	scx_bpf_dispatch_vtime(p, SHARED_DSQ, SCX_SLICE_DFL, vtime,
+					enq_flags);
 }
 
 void BPF_STRUCT_OPS(simple_dispatch, s32 cpu, struct task_struct *prev)
 {
-	 int ret;
-
-    // Try to consume from the local DSQ first
-    ret = scx_bpf_consume(SCX_DSQ_LOCAL);
-    if (ret == 0) {
-        // Successfully consumed a task from the local DSQ
-        // Decrement the local DSQ depth
-        u32 key = 0;  // Single key
-        u32 *depth_p = bpf_map_lookup_elem(&local_dsq_depth, &key);
-        if (depth_p && *depth_p > 0) {
-            (*depth_p)--;
-			bpf_printk("depth: %u\n", *depth_p);
-            // Update stats[2] with the current depth
-            u32 idx = 2;
-            u64 depth = *depth_p;
-            bpf_map_update_elem(&stats, &idx, &depth, BPF_ANY);
-        }
-        return;
-    }
-
-	scx_bpf_consume(SHARED_DSQ);// call scx_bpf_dsq_move_to_local()
+	scx_bpf_consume(SHARED_DSQ);
 }
 
 void BPF_STRUCT_OPS(simple_running, struct task_struct *p)
 {
-	if (fifo_sched)
-		return;
 
 	/*
 	 * Global vtime always progresses forward as tasks start executing. The
@@ -197,7 +119,8 @@ void BPF_STRUCT_OPS(simple_running, struct task_struct *p)
 		vtime_now = p->scx.dsq_vtime;
 }
 
-
+void BPF_STRUCT_OPS(simple_stopping, struct task_struct *p, bool runnable)
+{
 	/*
 	 * Scale the execution time by the inverse of the weight and charge.
 	 *
@@ -207,16 +130,16 @@ void BPF_STRUCT_OPS(simple_running, struct task_struct *p)
 	 * too much, determine the execution time by taking explicit timestamps
 	 * instead of depending on @p->scx.slice.
 	 */
-/* Updated simple_stopping Function */
-void BPF_STRUCT_OPS(simple_stopping, struct task_struct *p, bool runnable)
-{
-    if (fifo_sched)
-        return;
+	s32 cpu = bpf_get_smp_processor_id();
+	
+	// get the cache miss stats from cache_misses.bpf.c 
+	int *fd = bpf_map_lookup_elem(&cache_misses_map, &cpu);
+	// if cache miss stat > 500, sync do the p->nr_cpus_allowed - 1
+	if (fd && *fd > 500) {
+		p->nr_cpus_allowed = 1;
+	}
 
-    /* Existing code */
-    p->scx.dsq_vtime += (SCX_SLICE_DFL - p->scx.slice) * 100 / p->scx.weight;
-
-
+	p->scx.dsq_vtime += (SCX_SLICE_DFL - p->scx.slice) * 100 / p->scx.weight;
 }
 
 void BPF_STRUCT_OPS(simple_enable, struct task_struct *p)
@@ -228,8 +151,7 @@ void BPF_STRUCT_OPS(simple_enable, struct task_struct *p)
 s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
 {
     int ret;
-	u32 key = 0;
-    u32 depth = 0;
+
     
     ret = scx_bpf_create_dsq(SHARED_DSQ, -1);
     if (ret) {
@@ -237,21 +159,9 @@ s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
         return ret;
     }
 
-	ret = scx_bpf_create_dsq(SCX_DSQ_LOCAL, -1);
-    if (ret) {
-        bpf_printk("Failed to create local dispatch queue: %d\n", ret);
-        return ret;
-    }
-	
-	ret = bpf_map_update_elem(&local_dsq_depth, &key, &depth, BPF_ANY);
-    if (ret) {
-        bpf_printk("Failed to initialize local_dsq_depth: %d\n", ret);
-        return ret;
-    }
-
     // verify that the cache_miss_events map is initialized
     u32 cpu = 0;
-    int *fd = bpf_map_lookup_elem(&cache_miss_stats, &cpu);
+    int *fd = bpf_map_lookup_elem(&cache_misses_map, &cpu);
     if (!fd) {
         bpf_printk("cache_miss_events map not initialized by userspace!\n");
         return -EINVAL; 
