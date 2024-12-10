@@ -1,2 +1,5 @@
 *.o
+*.bpf.o
+*.bpf.skel.h
+vmlinux.h
 cache_event

@@ -3,7 +3,7 @@
 
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);  // Change to per-CPU array
-    __uint(max_entries, 64);                   // One entry per CPU
+    __uint(max_entries, 12);                   // One entry per CPU
     __type(key, u32);
     __type(value, u64);
     __uint(pinning, LIBBPF_PIN_BY_NAME);      // Enable map sharing

@@ -6,17 +6,26 @@
 
 
 
+// SEC("perf_event")
+// int count_cache_misses(struct bpf_perf_event_value *ctx) {
+//     u64 *counter;
+//     u32 key = 0;
+
+//     // Access the map and increment the counter
+//     counter = bpf_map_lookup_elem(&cache_misses_map, &key);
+//     if (counter) {
+//         (*counter)++;
+//     }
+//     bpf_printk("GOT QQQQ");
+//     return 0;
+// }
 SEC("perf_event")
 int count_cache_misses(struct bpf_perf_event_value *ctx) {
-    u64 *counter;
-    u32 key = 0;
-
-    // Access the map and increment the counter
-    counter = bpf_map_lookup_elem(&cache_misses_map, &key);
+    u32 cpu = bpf_get_smp_processor_id();
+    u64 *counter = bpf_map_lookup_elem(&cache_misses_map, &cpu);
     if (counter) {
         (*counter)++;
     }
-    bpf_printk("GOT QQQQ");
     return 0;
 }
 
