@@ -60,7 +60,7 @@ struct perf_event_attr *create_perf_event_attr_for_cache_loads() {
     return attr;
 }
 
-int open_and_load_bpf_program(struct bpf_program *prog, struct perf_event_attr *attr) {
+int open_and_load_bpf_program(struct bpf_program *prog, struct perf_event_attr *attr, int cpu) {
     int prog_fd;
     int perf_fd;
     
@@ -70,7 +70,7 @@ int open_and_load_bpf_program(struct bpf_program *prog, struct perf_event_attr *
         return -1;
     }
 
-    perf_fd = syscall(SYS_perf_event_open, attr, -1, 0, -1, 0);
+    perf_fd = syscall(SYS_perf_event_open, attr, -1, cpu, -1, 0);
     if (perf_fd < 0) {
         perror("perf_event_open");
         return -1;
@@ -138,17 +138,22 @@ int main() {
     // create perf_event_attr for cache loads
     attr_cache_loads = create_perf_event_attr_for_cache_loads();
 
-    // open and load eBPF program for cache misses
-    int perf_fd_cache_misses = open_and_load_bpf_program(count_cache_misses_prog, attr_cache_misses);
-    CHECK(perf_fd_cache_misses < 0, "open_and_load_bpf_program");
+    int num_cpus = get_nprocs();
 
-    // open and load eBPF program for cache loads
-    int perf_fd_cache_loads = open_and_load_bpf_program(count_cache_loads_prog, attr_cache_loads);
-    CHECK(perf_fd_cache_loads < 0, "open_and_load_bpf_program");
+    int *perf_fds_cache_misses = calloc(num_cpus, sizeof(int));
+    int *perf_fds_cache_loads = calloc(num_cpus, sizeof(int));
+    CHECK(!perf_fds_cache_misses || !perf_fds_cache_loads, "Failed to allocate memory for perf_fds");
+
+    for (int cpu = 0; cpu < num_cpus; cpu++) {
+        perf_fds_cache_misses[cpu] = open_and_load_bpf_program(count_cache_misses_prog, attr_cache_misses, cpu);
+        CHECK(perf_fds_cache_misses[cpu] < 0, "open_and_load_bpf_program for cache misses");
+
+        perf_fds_cache_loads[cpu] = open_and_load_bpf_program(count_cache_loads_prog, attr_cache_loads, cpu);
+        CHECK(perf_fds_cache_loads[cpu] < 0, "open_and_load_bpf_program for cache loads");
+    }
 
     printf("eBPF program successfully attached. Monitoring L1-dcache-load-misses and L1-dcache-loads...\n");
 
-    int num_cpus = get_nprocs();
     uint64_t *cpu_counts = calloc(num_cpus, sizeof(uint64_t));
     if (!cpu_counts) {
         perror("Failed to allocate memory for CPU counts");
@@ -188,7 +193,12 @@ int main() {
 
     free(cpu_counts);
     cache_misses_bpf__destroy(skel);
-    close(perf_fd_cache_misses);
-    close(perf_fd_cache_loads);
+    // Free resources at the end
+    for (int cpu = 0; cpu < num_cpus; cpu++) {
+        close(perf_fds_cache_misses[cpu]);
+        close(perf_fds_cache_loads[cpu]);
+    }
+    free(perf_fds_cache_misses);
+    free(perf_fds_cache_loads);
     return 0;
 }
