@@ -4,6 +4,9 @@ file(GLOB SOURCES
     "*.h"
 )
 
+set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0")
+
 add_definitions(-D_GNU_SOURCE)
 
 add_executable(shinjuku ${SOURCES})
