@@ -27,13 +27,8 @@ DEFINE_string(output_path, "/tmp/skyloft_synthetic", "The path to the experiment
 DEFINE_int32(num_workers, 2, "The number of workers.");
 DEFINE_bool(bench_request, false, "Benchmark request service time.");
 DEFINE_bool(fake_work, false, "Use fake work (spin) instead of real database operations.");
-DEFINE_int32(preemption_quantum, 0,
-             "Turn off time-based preemption by setting the preemption quantum to 0.");
 DEFINE_bool(detailed_print, false, "Print detailed experiment results.");
 DEFINE_bool(slowdown_print, false, "Print experiment results of request slowdown.");
-DEFINE_int32(guaranteed_cpus, 5, "Guranteed number of CPUs when running with batch app.");
-DEFINE_int32(adjust_quantum, 20, "Scheduler makes core allocation decision every quantum (us).");
-DEFINE_double(congestion_thresh, 0.05, "Threshold to detect congestion of applications.");
 
 static void write_percentiles(std::vector<uint64_t> &results, FILE *file, bool stdout = false)
 {

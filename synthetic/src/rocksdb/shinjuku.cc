@@ -19,19 +19,10 @@ typedef struct {
     int issued;
 } dispatcher_t;
 
-typedef struct {
-    int num_workers;
-    int preemption_quantum;
-    int guaranteed_cpus;
-    int adjust_quantum;
-    double congestion_thresh;
-} params_t;
-
 static dispatcher_t *g_dispatcher;
 static rocksdb_t *g_db;
 
 dispatcher_t *dispatcher_create(void);
-void dispatcher_destroy(dispatcher_t *dispatcher);
 void do_dispatching(dispatcher_t *dispatcher);
 
 dispatcher_t *dispatcher_create(void)
@@ -57,12 +48,6 @@ dispatcher_t *dispatcher_create(void)
     dispatcher->issued = 0;
 
     return dispatcher;
-}
-
-void dispatcher_destroy(dispatcher_t *dispatcher)
-{
-    free(dispatcher->requests);
-    free(dispatcher);
 }
 
 static inline request_t *poll_synthetic_network(dispatcher_t *dispatcher, __nsec start_time)
@@ -115,7 +100,6 @@ void do_dispatching(dispatcher_t *dispatcher)
             pthread_create(&tid, NULL, (void *(*)(void*))worker_request_handler, (void*)req);
             pthread_detach(tid);
         }
-
     }
 }
 
@@ -125,10 +109,6 @@ int main(int argc, char **argv)
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     gflags::ShutDownCommandLineFlags();
 
-
-        int i;
-    params_t params;
-
     if (FLAGS_load < 0) {
         printf("Invalid load: %f\n", FLAGS_load);
         exit(EXIT_FAILURE);
@@ -137,19 +117,6 @@ int main(int argc, char **argv)
         printf("Invalid get_service_time: %f\n", (double)FLAGS_get_service_time / NSEC_PER_USEC);
         exit(EXIT_FAILURE);
     }
-
-    // params.num_workers = FLAGS_num_workers;
-    // params.preemption_quantum = FLAGS_preemption_quantum;
-    // params.guaranteed_cpus = FLAGS_guaranteed_cpus;
-    // params.adjust_quantum = FLAGS_adjust_quantum;
-    // params.congestion_thresh = FLAGS_congestion_thresh;
-    // if (sl_sched_set_params((void *)&params) < 0) {
-    //     printf("Invalid params\n");
-    //     return;
-    // }
-
-    // printf("Dispatcher running on CPU %d, num workers: %d\n", sl_current_cpu_id(),
-    //        FLAGS_num_workers);
 
     if (!FLAGS_fake_work) {
         printf("RocksDB path: %s\n", FLAGS_rocksdb_path.c_str());
@@ -176,9 +143,12 @@ int main(int argc, char **argv)
     else
         write_lat_results(g_dispatcher->issued, g_dispatcher->requests);
 
-    dispatcher_destroy(g_dispatcher);
+    // cleanup
+    free(g_dispatcher->requests);
+    free(g_dispatcher);
     if (!FLAGS_fake_work)
         rocksdb_close(g_db);
+
     printf("Experiment exits gracefully.\n");
 
     exit(EXIT_SUCCESS);

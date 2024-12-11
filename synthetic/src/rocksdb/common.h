@@ -22,12 +22,8 @@ DECLARE_string(output_path);
 DECLARE_int32(num_workers);
 DECLARE_bool(bench_request);
 DECLARE_bool(fake_work);
-DECLARE_int32(preemption_quantum);
 DECLARE_bool(detailed_print);
 DECLARE_bool(slowdown_print);
-DECLARE_int32(guaranteed_cpus);
-DECLARE_int32(adjust_quantum);
-DECLARE_double(congestion_thresh);
 
 enum {
     ROCKSDB_GET,
