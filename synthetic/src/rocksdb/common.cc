@@ -86,6 +86,7 @@ void write_lat_results_detailed(int issued, request_t *reqs)
 
     fprintf(file, "id,type,timestamp,ingress,queue,handle,total\n");
 
+    printf("Write results, issued %d\n", issued);
     uint64_t offset = reqs[0].gen_time;
     int completed = 0, _issued = 0;
     for (int i = 0; i < issued; i++) {
