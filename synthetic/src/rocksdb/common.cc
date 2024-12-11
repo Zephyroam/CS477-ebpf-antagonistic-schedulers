@@ -94,7 +94,7 @@ void write_lat_results_detailed(int issued, request_t *reqs)
     int completed = 0, _issued = 0;
     for (int i = 0; i < issued; i++) {
         request_t *req = &reqs[i];
-        if (offset + FLAGS_discard_time * NSEC_PER_SEC < req->gen_time) {
+        if (offset + FLAGS_discard_time * NSEC_PER_SEC < req->gen_time || true) {
             _issued++;
             /* Some workers may not finish their work */
             if (req->end_time != 0 && req->start_time != 0) {
