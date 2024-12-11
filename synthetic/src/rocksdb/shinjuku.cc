@@ -6,17 +6,21 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
-
 #include <gflags/gflags.h>
 #include <rocksdb/c.h>
-
 #include "utils/time_utils.h"
 #include "common.h"
 #include "random.h"
 
+#define MAX_QUEUE_SIZE 1024
+
 typedef struct {
     request_t *requests;
     int issued;
+    int processed;
+    request_t *queue[MAX_QUEUE_SIZE];
+    int queue_start;
+    int queue_end;
 } dispatcher_t;
 
 static dispatcher_t *g_dispatcher;
@@ -24,7 +28,9 @@ static rocksdb_t *g_db;
 
 dispatcher_t *dispatcher_create(void);
 void do_dispatching(dispatcher_t *dispatcher);
+void *worker_thread_func(void *arg);
 
+// Initialize dispatcher
 dispatcher_t *dispatcher_create(void)
 {
     int i;
@@ -39,6 +45,9 @@ dispatcher_t *dispatcher_create(void)
     dispatcher = (dispatcher_t *)malloc(sizeof(dispatcher_t));
     dispatcher->requests = (request_t *)malloc(sizeof(request_t) * num_reqs);
     dispatcher->issued = 0;
+    dispatcher->processed = 0;
+    dispatcher->queue_start = 0;
+    dispatcher->queue_end = 0;
 
     double timestamp = 0;
     for (i = 0; i < num_reqs; i++) {
@@ -64,60 +73,83 @@ static inline request_t *poll_synthetic_network(dispatcher_t *dispatcher, __nsec
     return req;
 }
 
-/* Run-to-complete request handler */
-static void *worker_request_handler(void *arg)
+// Worker thread function
+void *worker_thread_func(void *arg)
 {
-    request_t *req = (request_t *)arg;
+    dispatcher_t *dispatcher = (dispatcher_t *)arg;
+    while (1) {
+        request_t *req = NULL;
 
-    req->start_time = now_ns();
-    if (FLAGS_fake_work) {
-        if (req->type == ROCKSDB_GET) {
-            fake_work(FLAGS_get_service_time);
-        } else if (req->type == ROCKSDB_RANGE) {
-            fake_work(FLAGS_range_query_service_time);
+        // Check for requests in the queue
+        while (dispatcher->queue_start == dispatcher->queue_end) {
+            usleep(100); // Busy wait
         }
-    } else {
-        if (req->type == ROCKSDB_GET) {
-            rocksdb_handle_get(g_db, req);
-        } else if (req->type == ROCKSDB_RANGE) {
-            rocksdb_handle_range_query(g_db, req);
+
+        req = dispatcher->queue[dispatcher->queue_start];
+        dispatcher->queue_start = (dispatcher->queue_start + 1) % MAX_QUEUE_SIZE;
+
+        if (!req) {
+            break; // Exit signal received
         }
+
+        req->start_time = now_ns();
+        if (FLAGS_fake_work) {
+            if (req->type == ROCKSDB_GET) {
+                fake_work(FLAGS_get_service_time);
+            } else if (req->type == ROCKSDB_RANGE) {
+                fake_work(FLAGS_range_query_service_time);
+            }
+        } else {
+            if (req->type == ROCKSDB_GET) {
+                rocksdb_handle_get(g_db, req);
+            } else if (req->type == ROCKSDB_RANGE) {
+                rocksdb_handle_range_query(g_db, req);
+            }
+        }
+        req->end_time = now_ns();
+
+        dispatcher->processed++;
     }
-    req->end_time = now_ns();
     return NULL;
 }
 
+// Dispatching requests
 void do_dispatching(dispatcher_t *dispatcher)
 {
     request_t *req;
     __nsec start, end;
-    int err;
-
     start = now_ns();
     end = now_ns() + FLAGS_run_time * NSEC_PER_SEC;
     printf("Start: %ld, End: %ld, Run time: %d\n", start, end, FLAGS_run_time);
     printf("Issuing requests...\n");
+
+    pthread_t workers[FLAGS_num_workers];
+    for (int i = 0; i < FLAGS_num_workers; i++) {
+        pthread_create(&workers[i], NULL, worker_thread_func, dispatcher);
+    }
+
     while (now_ns() < end) {
         req = poll_synthetic_network(dispatcher, start);
         if (req) {
-            pthread_t tid;
-            err = pthread_create(&tid, NULL, (void *(*)(void*))worker_request_handler, (void*)req);
-            if (err != 0) {
-                perror("pthread_create");
-                exit(EXIT_FAILURE);
-            }
-            err = pthread_detach(tid);
-            if (err != 0) {
-                perror("pthread_detach");
-                exit(EXIT_FAILURE);
-            }
+            dispatcher->queue[dispatcher->queue_end] = req;
+            dispatcher->queue_end = (dispatcher->queue_end + 1) % MAX_QUEUE_SIZE;
         }
     }
-    printf("All requests issued\n");
-    printf("Now NS: %ld\n", now_ns());
-    printf("Number of requests issued: %d\n", dispatcher->issued);
-}
 
+    // Signal workers to exit
+    for (int i = 0; i < FLAGS_num_workers; i++) {
+        dispatcher->queue[dispatcher->queue_end] = NULL;
+        dispatcher->queue_end = (dispatcher->queue_end + 1) % MAX_QUEUE_SIZE;
+    }
+
+    for (int i = 0; i < FLAGS_num_workers; i++) {
+        pthread_join(workers[i], NULL);
+    }
+
+    printf("All requests issued\n");
+    printf("Number of requests issued: %d\n", dispatcher->issued);
+    printf("Number of requests processed: %d\n", dispatcher->processed);
+}
 int main(int argc, char **argv)
 {
     gflags::SetUsageMessage("test_rocksdb [options]");
