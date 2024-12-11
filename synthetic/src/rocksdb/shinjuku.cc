@@ -35,6 +35,9 @@ dispatcher_t *dispatcher_create(void)
     int target_tput = target_throughput();
     int num_reqs = target_tput * FLAGS_run_time * 2;
 
+    printf("Target throughput: %d req/s\n", target_tput);
+    printf("Number of requests: %d\n", num_reqs);
+
     dispatcher = (dispatcher_t *)malloc(sizeof(dispatcher_t));
     dispatcher->requests = (request_t *)malloc(sizeof(request_t) * num_reqs);
 
