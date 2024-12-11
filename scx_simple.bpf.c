@@ -178,24 +178,31 @@ s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 w
     if (!tctx)
         return -ENOENT;
 
-    // Check if task is cache-limited
-    if (tctx->isLimited) {
-        // Try to place on less active cores
-        cpu = scx_bpf_pick_idle_cpu(p->cpus_ptr, SCX_PICK_IDLE_CORE);
-        if (cpu >= 0)
-            return cpu;
-    }
-
     bpf_rcu_read_lock();
     primary = primary_cpumask;
     reserve = reserve_cpumask;
 
+    if (!primary || !reserve) {
+        bpf_rcu_read_unlock();
+        return scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle);
+    }
+
+    // Check if task is cache-limited
+    if (tctx->isLimited) {
+        cpu = scx_bpf_pick_idle_cpu(p->cpus_ptr, SCX_PICK_IDLE_CORE);
+        if (cpu >= 0) {
+            bpf_rcu_read_unlock();
+            return cpu;
+        }
+    }
+
     // Try attached core in primary first
-    if (tctx->attached_core >= 0 && 
-        bpf_cpumask_test_cpu(tctx->attached_core, cast_mask(primary)) &&
-        scx_bpf_test_and_clear_cpu_idle(tctx->attached_core)) {
-        cpu = tctx->attached_core;
-        goto out_primary;
+    if (tctx->attached_core >= 0) {
+        if (bpf_cpumask_test_cpu(tctx->attached_core, cast_mask(primary)) &&
+            scx_bpf_test_and_clear_cpu_idle(tctx->attached_core)) {
+            cpu = tctx->attached_core;
+            goto out_primary;
+        }
     }
 
     // Try idle CPU in primary
@@ -218,11 +225,11 @@ s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 w
     cpu = scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle);
 
 out_primary:
-    bpf_rcu_read_unlock();
-    
     if (tctx->prev_cpu == cpu)
         tctx->attached_core = cpu;
     tctx->prev_cpu = prev_cpu;
+
+    bpf_rcu_read_unlock();
 
     if (is_idle) {
         stat_inc(0);
@@ -231,7 +238,6 @@ out_primary:
 
     return cpu;
 }
-
 void BPF_STRUCT_OPS(simple_enqueue, struct task_struct *p, u64 enq_flags)
 {
 	stat_inc(1);	/* count global queueing */
@@ -258,33 +264,56 @@ void BPF_STRUCT_OPS(simple_enqueue, struct task_struct *p, u64 enq_flags)
 // 	scx_bpf_consume(SHARED_DSQ);
 // }
 
-void BPF_STRUCT_OPS(simple_dispatch, s32 cpu, struct task_struct *prev)
+s32 BPF_STRUCT_OPS(simple_dispatch, s32 cpu, struct task_struct *prev)
 {
     struct pcpu_ctx *pcpu_ctx;
     struct bpf_cpumask *primary, *reserve;
     bool in_primary;
+    s32 ret = 0;
 
-    if (!scx_bpf_consume(SHARED_DSQ)) {
-        primary = primary_cpumask;
-        reserve = reserve_cpumask;
-        
-        pcpu_ctx = bpf_map_lookup_elem(&pcpu_ctxs, &cpu);
-        if (!pcpu_ctx)
-            return;
+    // Try to consume next task
+    if (scx_bpf_consume(SHARED_DSQ))
+        return 0;
 
-        in_primary = bpf_cpumask_test_cpu(cpu, cast_mask(primary));
-        
-        if (in_primary) {
-            if (prev && prev->__state == TASK_DEAD) {
-                bpf_cpumask_clear_cpu(cpu, primary);
-                try_make_core_reserved(cpu, reserve, false);
-            } else {
-                pcpu_ctx->scheduled_compaction = true;
-                bpf_timer_start(&pcpu_ctx->timer, P_REMOVE_NS, 
-                              BPF_F_TIMER_CPU_PIN);
-            }
+    bpf_rcu_read_lock();
+    primary = primary_cpumask;
+    reserve = reserve_cpumask;
+
+    if (!primary || !reserve) {
+        bpf_rcu_read_unlock();
+        return -EINVAL;
+    }
+
+    pcpu_ctx = bpf_map_lookup_elem(&pcpu_ctxs, &cpu);
+    if (!pcpu_ctx) {
+        bpf_rcu_read_unlock();
+        return -ENOENT;
+    }
+
+    in_primary = bpf_cpumask_test_cpu(cpu, cast_mask(primary));
+
+    // Keep task local if still runnable
+    if (prev && (prev->scx.flags & SCX_TASK_QUEUED) && in_primary) {
+        scx_bpf_dispatch(prev, SCX_DSQ_LOCAL, SCX_SLICE_DFL, 0);
+        bpf_rcu_read_unlock();
+        return 0;
+    }
+
+    // Handle CPU demotion
+    if (in_primary) {
+        if (prev && prev->__state == TASK_DEAD) {
+            // Immediate demotion if task died
+            bpf_cpumask_clear_cpu(cpu, primary);
+            try_make_core_reserved(cpu, reserve, false);
+        } else {
+            // Schedule compaction timer
+            pcpu_ctx->scheduled_compaction = true;
+            bpf_timer_start(&pcpu_ctx->timer, P_REMOVE_NS, BPF_F_TIMER_CPU_PIN);
         }
     }
+
+    bpf_rcu_read_unlock();
+    return ret;
 }
 
 void BPF_STRUCT_OPS(simple_running, struct task_struct *p)
@@ -302,10 +331,11 @@ void BPF_STRUCT_OPS(simple_running, struct task_struct *p)
 	// record current cache miss rate(misses/loades) for the current CPU
 	u64 *cache_misses;
 	u64 *cache_loads;
+    s32 cpu = bpf_get_smp_processor_id();
 	u32 key = 0;
 
-	cache_misses = bpf_map_lookup_elem(&cache_misses_map, &key);
-	cache_loads = bpf_map_lookup_elem(&cache_loads_map, &key);
+	cache_misses = bpf_map_lookup_percpu_elem(&cache_misses_map, &key, cpu);
+	cache_loads = bpf_map_lookup_percpu_elem(&cache_loads_map, &key, cpu);
 
 	if (cache_misses && cache_loads) {
 		struct task_ctx *tctx = bpf_task_storage_get(&task_ctx_stor, p, 0, 0);
@@ -336,10 +366,11 @@ void BPF_STRUCT_OPS(simple_stopping, struct task_struct *p, bool runnable)
 	// compute the change rate, if it is greater than 5%, set the task as limited
 	u64 *cache_misses;
 	u64 *cache_loads;
+    s32 cpu = bpf_get_smp_processor_id();
 	u32 key = 0;
 
-	cache_misses = bpf_map_lookup_elem(&cache_misses_map, &key);
-	cache_loads = bpf_map_lookup_elem(&cache_loads_map, &key);
+	cache_misses = bpf_map_lookup_percpu_elem(&cache_misses_map, &key, cpu);
+	cache_loads = bpf_map_lookup_percpu_elem(&cache_loads_map, &key, cpu);
 
 	if (cache_misses && cache_loads) {
 		struct task_ctx *tctx = bpf_task_storage_get(&task_ctx_stor, p, 0, 0);
