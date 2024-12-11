@@ -28,10 +28,9 @@ typedef uint64_t __usec;
 extern __usec g_boot_time_us;
 
 static inline __nsec now_ns() {
-    using namespace std::chrono;
-    auto now = high_resolution_clock::now();
-    auto duration = now.time_since_epoch();
-    return duration_cast<nanoseconds>(duration).count();
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (__nsec)ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
 }
 
 static inline __usec now_us() {
