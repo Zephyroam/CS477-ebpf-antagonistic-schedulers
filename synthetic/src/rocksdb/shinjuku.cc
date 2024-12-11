@@ -152,24 +152,6 @@ int main(int argc, char **argv)
     gflags::SetUsageMessage("test_rocksdb [options]");
     gflags::ParseCommandLineFlags(&argc, &argv, true);
     gflags::ShutDownCommandLineFlags();
-
-    // print the raw configuration
-    printf("Configuration:\n");
-    printf("  RocksDB path: %s\n", FLAGS_rocksdb_path.c_str());
-    printf("  RocksDB cache size: %d\n", FLAGS_rocksdb_cache_size);
-    printf("  Range query ratio: %f\n", FLAGS_range_query_ratio);
-    printf("  Range query size: %d\n", FLAGS_range_query_size);
-    printf("  Get service time: %d\n", FLAGS_get_service_time);
-    printf("  Range query service time: %d\n", FLAGS_range_query_service_time);
-    printf("  Load: %f\n", FLAGS_load);
-    printf("  Run time: %d\n", FLAGS_run_time);
-    printf("  Discard time: %d\n", FLAGS_discard_time);
-    printf("  Output path: %s\n", FLAGS_output_path.c_str());
-    printf("  Number of workers: %d\n", FLAGS_num_workers);
-    printf("  Benchmark request: %d\n", FLAGS_bench_request);
-    printf("  Fake work: %d\n", FLAGS_fake_work);
-    printf("  Detailed print: %d\n", FLAGS_detailed_print);
-    printf("  Slowdown print: %d\n", FLAGS_slowdown_print);
     
     if (FLAGS_load < 0) {
         printf("Invalid load: %f\n", FLAGS_load);
