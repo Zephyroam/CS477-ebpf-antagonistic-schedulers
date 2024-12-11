@@ -93,6 +93,7 @@ void do_dispatching(dispatcher_t *dispatcher)
 {
     request_t *req;
     __nsec start, end;
+    int err;
 
     start = now_ns();
     end = now_ns() + FLAGS_run_time * NSEC_PER_SEC;
@@ -102,11 +103,20 @@ void do_dispatching(dispatcher_t *dispatcher)
         req = poll_synthetic_network(dispatcher, start);
         if (req) {
             pthread_t tid;
-            pthread_create(&tid, NULL, (void *(*)(void*))worker_request_handler, (void*)req);
-            pthread_detach(tid);
+            err = pthread_create(&tid, NULL, (void *(*)(void*))worker_request_handler, (void*)req);
+            if (err != 0) {
+                perror("pthread_create");
+                exit(EXIT_FAILURE);
+            }
+            err = pthread_detach(tid);
+            if (err != 0) {
+                perror("pthread_detach");
+                exit(EXIT_FAILURE);
+            }
         }
     }
     printf("All requests issued\n");
+    printf("Number of requests issued: %d\n", dispatcher->issued);
 }
 
 int main(int argc, char **argv)
