@@ -130,11 +130,11 @@ int main(int argc, char **argv)
     printf("Configuration:\n");
     printf("  RocksDB path: %s\n", FLAGS_rocksdb_path.c_str());
     printf("  RocksDB cache size: %d\n", FLAGS_rocksdb_cache_size);
-    printf("  Range query ratio: %.2f\n", FLAGS_range_query_ratio);
+    printf("  Range query ratio: %f\n", FLAGS_range_query_ratio);
     printf("  Range query size: %d\n", FLAGS_range_query_size);
     printf("  Get service time: %d\n", FLAGS_get_service_time);
     printf("  Range query service time: %d\n", FLAGS_range_query_service_time);
-    printf("  Load: %.2f\n", FLAGS_load);
+    printf("  Load: %f\n", FLAGS_load);
     printf("  Run time: %d\n", FLAGS_run_time);
     printf("  Discard time: %d\n", FLAGS_discard_time);
     printf("  Output path: %s\n", FLAGS_output_path.c_str());
