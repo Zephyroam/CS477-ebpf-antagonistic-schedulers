@@ -69,7 +69,7 @@ static void write_percentiles(std::vector<uint64_t> &results, FILE *file, bool s
 void write_lat_results_detailed(int issued, request_t *reqs)
 {
     char fname[256];
-    sprintf(fname, "%s/rocksdb_%s_%.1f_%.1f_%.3f_%.2f_%d_%ld", FLAGS_output_path.c_str(),
+    sprintf(fname, "%s_rocksdb_%s_%.1f_%.1f_%.3f_%.2f_%d_%ld", FLAGS_output_path.c_str(),
             program_invocation_short_name,
             (double)FLAGS_get_service_time / NSEC_PER_USEC,
             (double)FLAGS_range_query_service_time / NSEC_PER_USEC, FLAGS_range_query_ratio,
@@ -81,13 +81,11 @@ void write_lat_results_detailed(int issued, request_t *reqs)
         exit(EXIT_FAILURE);
     }
 
-    printf("Write results, issued %d\n", issued);
     std::vector<uint64_t> ingress_res;
     std::vector<uint64_t> queue_res;
     std::vector<uint64_t> handle_res;
     std::vector<uint64_t> total_res;
     std::vector<request_t *> finished_reqs;
-    printf("Write results, issued %d\n", issued);
 
     fprintf(file, "id,type,timestamp,ingress,queue,handle,total\n");
 
