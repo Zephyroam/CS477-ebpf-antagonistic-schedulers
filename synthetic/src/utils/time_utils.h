@@ -29,7 +29,7 @@ extern __usec g_boot_time_us;
 
 static inline __nsec now_ns() {
     struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
+    timespec_get(&ts, TIME_UTC);
     return (__nsec)ts.tv_sec * NSEC_PER_SEC + ts.tv_nsec;
 }
 
