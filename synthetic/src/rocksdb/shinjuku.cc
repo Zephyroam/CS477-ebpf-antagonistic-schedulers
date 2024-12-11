@@ -106,6 +106,7 @@ void do_dispatching(dispatcher_t *dispatcher)
             pthread_detach(tid);
         }
     }
+    printf("All requests issued\n");
 }
 
 int main(int argc, char **argv)
