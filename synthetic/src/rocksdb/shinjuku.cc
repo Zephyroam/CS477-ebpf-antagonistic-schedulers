@@ -37,7 +37,7 @@ dispatcher_t *dispatcher_create(void)
     dispatcher_t *dispatcher;
 
     int target_tput = target_throughput();
-    int num_reqs = target_tput * FLAGS_run_time * 2;
+    int num_reqs = target_tput * FLAGS_run_time;
 
     printf("Target throughput: %d req/s\n", target_tput);
     printf("Number of requests: %d\n", num_reqs);
@@ -120,8 +120,6 @@ void do_dispatching(dispatcher_t *dispatcher)
     __nsec start, end;
     start = now_ns();
     end = now_ns() + FLAGS_run_time * NSEC_PER_SEC;
-    printf("Start: %ld, End: %ld, Run time: %d\n", start, end, FLAGS_run_time);
-    printf("Issuing requests...\n");
 
     pthread_t workers[FLAGS_num_workers];
     for (int i = 0; i < FLAGS_num_workers; i++) {
@@ -146,7 +144,6 @@ void do_dispatching(dispatcher_t *dispatcher)
         pthread_join(workers[i], NULL);
     }
 
-    printf("All requests issued\n");
     printf("Number of requests issued: %d\n", dispatcher->issued);
     printf("Number of requests processed: %d\n", dispatcher->processed);
 }
