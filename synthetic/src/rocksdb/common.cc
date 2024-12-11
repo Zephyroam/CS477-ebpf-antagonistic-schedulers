@@ -337,8 +337,8 @@ void benchmark_request(rocksdb_t *db)
 {
     int i;
     request_t req;
-    const int get_times = 10000;
-    const int range_query_times = 1000;
+    const int get_times = 100000;
+    const int range_query_times = 10000;
     double get_avg, range_avg;
     __nsec start;
 
