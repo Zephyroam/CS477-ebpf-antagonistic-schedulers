@@ -88,9 +88,6 @@ void init_request_file(request_t *req);
 void init_request_bimodal(request_t *req, double ratio, int size);
 void fake_work(uint64_t service_time);
 
-/* partitioned-FCFS */
-#define MQ 1
-
 #define CPU_FREQ_GHZ 2.6
 
 #endif
