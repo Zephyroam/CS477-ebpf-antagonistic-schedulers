@@ -96,6 +96,8 @@ void do_dispatching(dispatcher_t *dispatcher)
 
     start = now_ns();
     end = now_ns() + FLAGS_run_time * NSEC_PER_SEC;
+    printf("Start: %ld, End: %ld, Run time: %d\n", start, end, FLAGS_run_time);
+    printf("Issuing requests...\n");
     while (now_ns() < end) {
         req = poll_synthetic_network(dispatcher, start);
         if (req) {
