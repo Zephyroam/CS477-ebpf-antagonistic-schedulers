@@ -116,6 +116,7 @@ void do_dispatching(dispatcher_t *dispatcher)
         }
     }
     printf("All requests issued\n");
+    print("Now NS: %ld\n", now_ns());
     printf("Number of requests issued: %d\n", dispatcher->issued);
 }
 
