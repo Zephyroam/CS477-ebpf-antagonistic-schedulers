@@ -79,7 +79,7 @@ static inline request_t *poll_synthetic_network(dispatcher_t *dispatcher, __nsec
 }
 
 /* Run-to-complete request handler */
-static void worker_request_handler(void *arg)
+static void *worker_request_handler(void *arg)
 {
     request_t *req = (request_t *)arg;
 
@@ -98,6 +98,7 @@ static void worker_request_handler(void *arg)
         }
     }
     req->end_time = now_ns();
+    return NULL;
 }
 
 void do_dispatching(dispatcher_t *dispatcher)
@@ -105,23 +106,27 @@ void do_dispatching(dispatcher_t *dispatcher)
     request_t *req;
     __nsec start, end;
 
-
     start = now_ns();
     end = now_ns() + FLAGS_run_time * NSEC_PER_SEC;
     while (now_ns() < end) {
         req = poll_synthetic_network(dispatcher, start);
         if (req) {
-            pthread_t thread;
-            pthread_create(&thread, NULL, (void *(*)(void *))worker_request_handler, req);
-            pthread_detach(thread);
+            pthread_t tid;
+            pthread_create(&tid, NULL, (void *(*)(void*))worker_request_handler, (void*)req);
+            pthread_detach(tid);
         }
 
     }
 }
 
-static void experiment_main(void *arg)
+int main(int argc, char **argv)
 {
-    int i;
+    gflags::SetUsageMessage("test_rocksdb [options]");
+    gflags::ParseCommandLineFlags(&argc, &argv, true);
+    gflags::ShutDownCommandLineFlags();
+
+
+        int i;
     params_t params;
 
     if (FLAGS_load < 0) {
@@ -177,14 +182,4 @@ static void experiment_main(void *arg)
     printf("Experiment exits gracefully.\n");
 
     exit(EXIT_SUCCESS);
-}
-
-int main(int argc, char **argv)
-{
-    gflags::SetUsageMessage("test_rocksdb [options]");
-    gflags::ParseCommandLineFlags(&argc, &argv, true);
-    gflags::ShutDownCommandLineFlags();
-
-
-    experiment_main(NULL);
 }
