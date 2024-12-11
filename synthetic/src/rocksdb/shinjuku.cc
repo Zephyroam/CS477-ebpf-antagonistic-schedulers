@@ -37,7 +37,7 @@ dispatcher_t *dispatcher_create(void)
     dispatcher_t *dispatcher;
 
     int target_tput = target_throughput();
-    int num_reqs = target_tput * FLAGS_run_time;
+    int num_reqs = target_tput * FLAGS_run_time * 2;
 
     printf("Target throughput: %d req/s\n", target_tput);
     printf("Number of requests: %d\n", num_reqs);
