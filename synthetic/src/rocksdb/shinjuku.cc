@@ -131,11 +131,11 @@ int main(int argc, char **argv)
 
     if (FLAGS_load < 0) {
         printf("Invalid load: %f\n", FLAGS_load);
-        return;
+        exit(EXIT_FAILURE);
     }
     if (FLAGS_get_service_time < 0 || (double)FLAGS_get_service_time > 1000 * NSEC_PER_USEC) {
         printf("Invalid get_service_time: %f\n", (double)FLAGS_get_service_time / NSEC_PER_USEC);
-        return;
+        exit(EXIT_FAILURE);
     }
 
     // params.num_workers = FLAGS_num_workers;
