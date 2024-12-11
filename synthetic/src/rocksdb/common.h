@@ -91,6 +91,6 @@ void fake_work(uint64_t service_time);
 /* partitioned-FCFS */
 #define MQ 1
 
-#define CPU_FREQ_GHZ 2
+#define CPU_FREQ_GHZ 2.6
 
 #endif
