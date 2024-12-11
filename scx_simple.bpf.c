@@ -187,16 +187,8 @@ s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 w
         return scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle);
     }
 
-    // Check if task is cache-limited
-    if (tctx->isLimited) {
-        cpu = scx_bpf_pick_idle_cpu(p->cpus_ptr, SCX_PICK_IDLE_CORE);
-        if (cpu >= 0) {
-            bpf_rcu_read_unlock();
-            return cpu;
-        }
-    }
 
-    // Try attached core in primary first
+    // Try attached core in primary first, the highest priority
     if (tctx->attached_core >= 0) {
         if (bpf_cpumask_test_cpu(tctx->attached_core, cast_mask(primary)) &&
             scx_bpf_test_and_clear_cpu_idle(tctx->attached_core)) {
@@ -205,12 +197,58 @@ s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 w
         }
     }
 
-    // Try idle CPU in primary
+    // Limited tasks can only use reserve or default CPUs, can not set cpu in reserve to primary
+    if (tctx->isLimited) {
+
+        // Try fully idle CPU in reserve first
+        cpu = scx_bpf_pick_idle_cpu(cast_mask(reserve), SCX_PICK_IDLE_CORE);
+        if (cpu >= 0) {
+            bpf_rcu_read_unlock();
+            return cpu;
+        }
+
+        // Try reserve set first
+        cpu = scx_bpf_pick_idle_cpu(cast_mask(reserve), 0);
+        if (cpu >= 0) {
+            bpf_rcu_read_unlock();
+            return cpu;
+        }
+        
+        // Fallback to any idle CPU
+        cpu = scx_bpf_pick_idle_cpu(p->cpus_ptr, SCX_PICK_IDLE_CORE);
+        if (cpu >= 0) {
+            bpf_rcu_read_unlock();
+            return cpu;
+        }
+
+        // Last resort - default selection
+        cpu = scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle);
+        bpf_rcu_read_unlock();
+        return cpu;
+    }
+
+    // Try fully idle CPU in primary
+    cpu = scx_bpf_pick_idle_cpu(cast_mask(primary), SCX_PICK_IDLE_CORE);
+    if (cpu >= 0)
+        goto out_primary;
+
+    // Try any idle CPU in primary
     cpu = scx_bpf_pick_idle_cpu(cast_mask(primary), 0);
     if (cpu >= 0)
         goto out_primary;
 
-    // Try reserve set
+    // Try fully idle CPU in reserve
+    cpu = scx_bpf_pick_idle_cpu(cast_mask(reserve), SCX_PICK_IDLE_CORE);
+    if (cpu >= 0) {
+        bpf_cpumask_set_cpu(cpu, primary);
+        if (bpf_cpumask_test_cpu(cpu, cast_mask(reserve))) {
+            __sync_fetch_and_add(&nr_reserved, -1);
+            bpf_cpumask_clear_cpu(cpu, reserve);
+        }
+        goto out_primary;
+    }
+
+    // Try any idle CPU in reserve
     cpu = scx_bpf_pick_idle_cpu(cast_mask(reserve), 0);
     if (cpu >= 0) {
         bpf_cpumask_set_cpu(cpu, primary);
