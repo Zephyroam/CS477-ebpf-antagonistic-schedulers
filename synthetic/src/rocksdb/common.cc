@@ -78,11 +78,13 @@ void write_lat_results_detailed(int issued, request_t *reqs)
     assert(file != NULL);
     printf("Write results to %s\n", fname);
 
+    printf("Write results, issued %d\n", issued);
     std::vector<uint64_t> ingress_res;
     std::vector<uint64_t> queue_res;
     std::vector<uint64_t> handle_res;
     std::vector<uint64_t> total_res;
     std::vector<request_t *> finished_reqs;
+    printf("Write results, issued %d\n", issued);
 
     fprintf(file, "id,type,timestamp,ingress,queue,handle,total\n");
 
