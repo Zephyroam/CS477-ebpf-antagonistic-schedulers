@@ -100,9 +100,14 @@ void write_lat_results_detailed(int issued, request_t *reqs)
             }
         }
     }
+
+    printf("Completed %d/%d\n", completed, _issued);
+
     std::sort(finished_reqs.begin(), finished_reqs.end(), [](request_t *req1, request_t *req2) {
         return req1->end_time - req1->gen_time < req2->end_time - req2->gen_time;
     });
+    printf("Sorted\n");
+
     for (int i = 0; i < completed; ++i) {
         request_t *req = finished_reqs[i];
 
@@ -119,6 +124,8 @@ void write_lat_results_detailed(int issued, request_t *reqs)
         fprintf(file, "%d,%d,%ld,%ld,%ld,%ld,%ld\n", i, req->type, req->gen_time - offset,
                 ingress_lat, queue_lat, handle_lat, total_lat);
     }
+
+    printf("Write percentiles\n");
 
     double actual_tput = (double)completed / (FLAGS_run_time - FLAGS_discard_time);
     printf("Results: \n");
