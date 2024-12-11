@@ -75,11 +75,11 @@ void write_lat_results_detailed(int issued, request_t *reqs)
             (double)FLAGS_range_query_service_time / NSEC_PER_USEC, FLAGS_range_query_ratio,
             FLAGS_load, FLAGS_num_workers, time(NULL));
     FILE *file = fopen(fname, "w");
+    printf("Write results to %s\n", fname);
     if (file == NULL) {
         perror("Failed to open file");
         exit(EXIT_FAILURE);
     }
-    printf("Write results to %s\n", fname);
 
     printf("Write results, issued %d\n", issued);
     std::vector<uint64_t> ingress_res;
