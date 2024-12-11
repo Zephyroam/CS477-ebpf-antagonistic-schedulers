@@ -29,8 +29,6 @@ dispatcher_t *dispatcher_create(void)
 {
     int i;
     dispatcher_t *dispatcher;
-    request_t *req;
-    bool range_query = false;
 
     int target_tput = target_throughput();
     int num_reqs = target_tput * FLAGS_run_time * 2;
@@ -40,6 +38,7 @@ dispatcher_t *dispatcher_create(void)
 
     dispatcher = (dispatcher_t *)malloc(sizeof(dispatcher_t));
     dispatcher->requests = (request_t *)malloc(sizeof(request_t) * num_reqs);
+    dispatcher->issued = 0;
 
     double timestamp = 0;
     for (i = 0; i < num_reqs; i++) {
@@ -48,7 +47,6 @@ dispatcher_t *dispatcher_create(void)
                              FLAGS_range_query_size);
         dispatcher->requests[i].gen_time = timestamp * NSEC_PER_USEC;
     }
-    dispatcher->issued = 0;
 
     return dispatcher;
 }
@@ -99,7 +97,6 @@ void do_dispatching(dispatcher_t *dispatcher)
     end = now_ns() + FLAGS_run_time * NSEC_PER_SEC;
     printf("Start: %ld, End: %ld, Run time: %d\n", start, end, FLAGS_run_time);
     printf("Issuing requests...\n");
-    int req_fail_count = 0;
     while (now_ns() < end) {
         req = poll_synthetic_network(dispatcher, start);
         if (req) {
@@ -115,11 +112,7 @@ void do_dispatching(dispatcher_t *dispatcher)
                 exit(EXIT_FAILURE);
             }
         }
-        else {
-            req_fail_count++;
-        }
     }
-    printf("Request fail count: %d\n", req_fail_count);
     printf("All requests issued\n");
     printf("Now NS: %ld\n", now_ns());
     printf("Number of requests issued: %d\n", dispatcher->issued);
@@ -191,5 +184,5 @@ int main(int argc, char **argv)
 
     printf("Experiment exits gracefully.\n");
 
-    exit(EXIT_SUCCESS);
+    return 0;
 }

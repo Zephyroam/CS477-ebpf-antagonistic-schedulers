@@ -358,7 +358,7 @@ void benchmark_request(rocksdb_t *db)
             get_avg += (double)(req.end_time - req.start_time) / NSEC_PER_USEC;
         }
     }
-    printf("  GET Avg (us) %.3f\n", get_avg / get_times);
+    printf("GET Avg (us) %.3f\n", get_avg / get_times);
 
     range_avg = 0;
     req.type = ROCKSDB_RANGE;
@@ -377,7 +377,7 @@ void benchmark_request(rocksdb_t *db)
             range_avg += (double)(req.end_time - req.start_time) / NSEC_PER_USEC;
         }
     }
-    printf("  RANGE Avg (us) %.3f\n", range_avg / range_query_times);
+    printf("RANGE Avg (us) %.3f\n", range_avg / range_query_times);
 }
 
 void init_request(request_t *req)
