@@ -409,20 +409,11 @@ void init_request_bimodal(request_t *req, double ratio, int size)
     }
 }
 
-// void fake_work(uint64_t service_time)
-// {
-//     uint64_t i = 0, n = service_time * CPU_FREQ_GHZ;
-//     do {
-//         asm volatile("nop");
-//         i++;
-//     } while (i < n);
-// }
-
 // Fake work function
 void fake_work(uint64_t target_ns) {
     uint64_t start = __rdtsc();
-    uint64_t target_cycles = target_ns * 2.5; // 假设 CPU 频率为 2.5 GHz
+    uint64_t target_cycles = target_ns * CPU_FREQ_GHZ;
     while (__rdtsc() - start < target_cycles) {
-        __asm__ volatile("nop"); // 防止优化
+        __asm__ volatile("nop");
     }
 }
