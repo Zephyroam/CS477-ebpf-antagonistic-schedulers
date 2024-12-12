@@ -3,3 +3,4 @@
 *.bpf.skel.h
 vmlinux.h
 cache_event
+scx_simple
