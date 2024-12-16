@@ -1,29 +1,5 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/*
- * A simple scheduler.
- *
- * By default, it operates as a simple global weighted vtime scheduler and can
- * be switched to FIFO scheduling. It also demonstrates the following niceties.
- *
- * - Statistics tracking how many tasks are queued to local and global dsq's.
- * - Termination notification for userspace.
- *
- * While very simple, this scheduler should work reasonably well on CPUs with a
- * uniform L3 cache topology. While preemption is not implemented, the fact that
- * the scheduling queue is shared across all CPUs means that whatever is at the
- * front of the queue is likely to be executed fairly quickly given enough
- * number of CPUs. The FIFO scheduling mode may be beneficial to some workloads
- * but comes with the usual problems with FIFO scheduling where saturating
- * threads can easily drown out interactive ones.
- *
- * Copyright (c) 2022 Meta Platforms, Inc. and affiliates.
- * Copyright (c) 2022 Tejun Heo <tj@kernel.org>
- * Copyright (c) 2022 David Vernet <dvernet@meta.com>
- */
+
 #include "include/scx/common.bpf.h"
-// #include <linux/perf_event.h>
-// #include <bpf/bpf_helpers.h>
-// #include <bpf/bpf_tracing.h>
 
 
 char _license[] SEC("license") = "GPL";
@@ -39,7 +15,7 @@ UEI_DEFINE(uei);
 #define NSEC_PER_MSEC (USEC_PER_MSEC * NSEC_PER_USEC)
 #define SHARED_DSQ 0
 #define P_REMOVE_NS (2 * NSEC_PER_MSEC)
-#define R_MAX 5
+#define R_MAX 3
 #define TASK_DEAD                       0x00000080
 
 private(NESTS) struct bpf_cpumask __kptr *primary_cpumask;
@@ -128,6 +104,7 @@ int count_cache_loads(struct bpf_perf_event_value *ctx) {
 }
 
 
+
 static void try_make_core_reserved(s32 cpu, struct bpf_cpumask *reserve, bool promotion) 
 {
     s32 tmp_nr_reserved = nr_reserved;
@@ -152,7 +129,37 @@ static inline bool vtime_before(u64 a, u64 b)
 	return (s64)(a - b) < 0;
 }
 
+// automatically called by the kernel when the timer expires
+static int compact_primary_core(void *map, int *key, struct bpf_timer *timer)
+{
+    s32 cpu = *key;
+    struct pcpu_ctx *pcpu_ctx;
+    struct bpf_cpumask *primary, *reserve;
 
+    bpf_rcu_read_lock();
+    primary = primary_cpumask;
+    reserve = reserve_cpumask;
+    if (!primary || !reserve) {
+        bpf_rcu_read_unlock();
+        return 0;
+    }
+
+    pcpu_ctx = bpf_map_lookup_elem(&pcpu_ctxs, &cpu);
+    if (!pcpu_ctx) {
+        bpf_rcu_read_unlock();
+        return 0;
+    }
+
+    // Demote CPU from primary to reserve set
+    bpf_cpumask_clear_cpu(cpu, primary);
+    try_make_core_reserved(cpu, reserve, false);
+
+    // Reset the scheduled_compaction flag
+    pcpu_ctx->scheduled_compaction = false;
+
+    bpf_rcu_read_unlock();
+    return 0;
+}
 // s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake_flags)
 // {
 // 	bool is_idle = false;
@@ -263,6 +270,21 @@ s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 w
     cpu = scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle);
 
 out_primary:
+    
+    struct pcpu_ctx *pcpu_ctx = bpf_map_lookup_elem(&pcpu_ctxs, &cpu);
+    if (pcpu_ctx && pcpu_ctx->scheduled_compaction) {
+        int err = bpf_timer_cancel(&pcpu_ctx->timer);
+        if (err < 0) {
+            scx_bpf_error("Failed to cancel pcpu timer");
+        }
+        err = bpf_timer_set_callback(&pcpu_ctx->timer, compact_primary_core);
+        if (err) {
+            scx_bpf_error("Failed to re-arm pcpu timer");
+        }
+        pcpu_ctx->scheduled_compaction = false;
+    }
+
+
     if (tctx->prev_cpu == cpu)
         tctx->attached_core = cpu;
     tctx->prev_cpu = prev_cpu;
@@ -297,10 +319,7 @@ void BPF_STRUCT_OPS(simple_enqueue, struct task_struct *p, u64 enq_flags)
 	}
 }
 
-// void BPF_STRUCT_OPS(simple_dispatch, s32 cpu, struct task_struct *prev)
-// {
-// 	scx_bpf_consume(SHARED_DSQ);
-// }
+
 
 s32 BPF_STRUCT_OPS(simple_dispatch, s32 cpu, struct task_struct *prev)
 {
@@ -415,7 +434,7 @@ void BPF_STRUCT_OPS(simple_stopping, struct task_struct *p, bool runnable)
 		if (tctx) {
 			u64 current_cache_miss_rate = *cache_misses / *cache_loads;
 			u64 change_rate = (current_cache_miss_rate - tctx->last_cache_miss_rate) / tctx->last_cache_miss_rate;
-			if (change_rate > 0.05) {
+			if (change_rate > 0.08) {
 				tctx->isLimited = true;
 			}
 		}
@@ -429,28 +448,16 @@ void BPF_STRUCT_OPS(simple_enable, struct task_struct *p)
 
 }
 
-/* Scheduler init*/
-// s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
-// {
-//     int ret;
 
-    
-//     ret = scx_bpf_create_dsq(SHARED_DSQ, -1);
-//     if (ret) {
-//         bpf_printk("Failed to create dispatch queue: %d\n", ret);
-//         return ret;
-//     }
-
-
-
-//     bpf_printk("Simple scheduler initialized successfully.\n");
-//     return 0;
-// }
 
 s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
 {
     struct bpf_cpumask *cpumask;
     int ret;
+    s32 cpu;
+	int err;
+	struct bpf_timer *timer;
+	u32 key = 0;
 
     ret = scx_bpf_create_dsq(SHARED_DSQ, -1);
     if (ret)
@@ -473,7 +480,6 @@ s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
     cpumask = bpf_kptr_xchg(&reserve_cpumask, cpumask);
     if (cpumask)
         bpf_cpumask_release(cpumask);
-
     return 0;
 }
 
