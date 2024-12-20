@@ -16,18 +16,14 @@
 #include <sys/ioctl.h>
 #include <linux/perf_event.h>
 #include "include/scx/common.h"
-#include "scx_simple.bpf.skel.h"
+#include "scx_kun.bpf.skel.h"
 
 const char help_fmt[] =
-"A simple sched_ext scheduler.\n"
 "\n"
 "See the top-level comment in .bpf.c for more details.\n"
 "\n"
-"Usage: %s [-f] [-v]\n"
-"\n"
-"  -f            Use FIFO scheduling instead of weighted vtime scheduling\n"
-"  -v            Print libbpf debug messages\n"
-"  -h            Display this help and exit\n";
+"Usage: %s [-f] [-v]\n";
+
 
 static bool verbose;
 static volatile int exit_req;
@@ -39,12 +35,12 @@ static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va
 	return vfprintf(stderr, format, args);
 }
 
-static void sigint_handler(int simple)
+static void sigint_handler(int kun)
 {
 	exit_req = 1;
 }
 
-static void read_stats(struct scx_simple_bpf *skel, __u64 *stats)
+static void read_stats(struct scx_kun_bpf *skel, __u64 *stats)
 {
 	int nr_cpus = libbpf_num_possible_cpus();
 	__u64 cnts[2][nr_cpus];
@@ -169,7 +165,7 @@ int open_and_load_bpf_program(struct bpf_program *prog, struct perf_event_attr *
 
 int main(int argc, char **argv)
 {
-	struct scx_simple_bpf *skel;
+	struct scx_kun_bpf *skel;
 	struct bpf_link *link;
 	__u32 opt;
 	__u64 ecode;
@@ -178,7 +174,7 @@ int main(int argc, char **argv)
 	signal(SIGINT, sigint_handler);
 	signal(SIGTERM, sigint_handler);
 restart:
-	skel = SCX_OPS_OPEN(simple_ops, scx_simple_bpf);
+	skel = SCX_OPS_OPEN(kun_ops, scx_kun_bpf);
 
 	while ((opt = getopt(argc, argv, "fvh")) != -1) {
 		switch (opt) {
@@ -194,8 +190,8 @@ restart:
 		}
 	}
 
-	SCX_OPS_LOAD(skel, simple_ops, scx_simple_bpf, uei);
-	link = SCX_OPS_ATTACH(skel, simple_ops, scx_simple_bpf);
+	SCX_OPS_LOAD(skel, kun_ops, scx_kun_bpf, uei);
+	link = SCX_OPS_ATTACH(skel, kun_ops, scx_kun_bpf);
 
 
 	/*******************/
@@ -296,7 +292,7 @@ restart:
 
 	bpf_link__destroy(link);
 	ecode = UEI_REPORT(skel, uei);
-	scx_simple_bpf__destroy(skel);
+	scx_kun_bpf__destroy(skel);
 
 	if (UEI_ECODE_RESTART(ecode))
 		goto restart;
