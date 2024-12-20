@@ -1,4 +1,4 @@
-# Custom Scheduling Policies Using eBPF for Antagonistic Workloads
+# [Custom Scheduling Policies Using eBPF for Antagonistic Workloads](https://github.com/Zephyroam/CS477-ebpf-antagonistic-schedulers)
 
 This project explores the use of the `sched-ext` framework and eBPF to develop custom scheduling policies for multi-core systems. The aim is to mitigate resource contention caused by co-locating latency-sensitive and throughput-intensive workloads, addressing the limitations of general-purpose schedulers like Linux CFS.
 
