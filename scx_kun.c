@@ -1,3 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+/*
+ * Copyright (c) 2022 Meta Platforms, Inc. and affiliates.
+ * Copyright (c) 2022 Tejun Heo <tj@kernel.org>
+ * Copyright (c) 2022 David Vernet <dvernet@meta.com>
+ */
 #include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
@@ -13,11 +19,15 @@
 #include "scx_kun.bpf.skel.h"
 
 const char help_fmt[] =
+"A kun sched_ext scheduler.\n"
 "\n"
 "See the top-level comment in .bpf.c for more details.\n"
 "\n"
-"Usage: %s [-f] [-v]\n";
-
+"Usage: %s [-f] [-v]\n"
+"\n"
+"  -f            Use FIFO scheduling instead of weighted vtime scheduling\n"
+"  -v            Print libbpf debug messages\n"
+"  -h            Display this help and exit\n";
 
 static bool verbose;
 static volatile int exit_req;

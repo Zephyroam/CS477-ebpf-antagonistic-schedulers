@@ -4,7 +4,7 @@
 
 char _license[] SEC("license") = "GPL";
 
-const volatile bool fifo_sched;//for test
+const volatile bool fifo_sched;
 
 static u64 vtime_now;
 UEI_DEFINE(uei);
@@ -18,15 +18,14 @@ UEI_DEFINE(uei);
 #define R_MAX 3
 #define TASK_DEAD                       0x00000080
 
-struct bpf_cpumask __kptr *primary_cpumask;
-struct bpf_cpumask __kptr *buffer_cpumask;
+private(NESTS) struct bpf_cpumask __kptr *primary_cpumask;
+private(NESTS) struct bpf_cpumask __kptr *buffer_cpumask;
 static s32 nr_buffer;
 
 //task context
 struct task_ctx {
 	bool isLimited;
 	u64 last_cache_miss_rate;
-	
     s32 prefer_core;
     s32 prev_cpu;
 };
@@ -35,7 +34,6 @@ struct task_ctx {
 struct pcpu_ctx {
     struct bpf_timer timer;
     bool scheduled_degrade;
-    u64 last_cache_miss_rate; 
 };
 
 
@@ -161,7 +159,19 @@ static int degrade_primary_core(void *map, int *key, struct bpf_timer *timer)
     bpf_rcu_read_unlock();
     return 0;
 }
+// s32 BPF_STRUCT_OPS(kun_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake_flags)
+// {
+// 	bool is_idle = false;
+// 	s32 cpu;
 
+// 	cpu = scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle);
+// 	if (is_idle) {
+// 		stat_inc(0);	/* count local queueing */
+// 		scx_bpf_dispatch(p, SCX_DSQ_LOCAL, SCX_SLICE_DFL, 0);
+// 	}
+
+// 	return cpu;
+// }
 
 s32 BPF_STRUCT_OPS(kun_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake_flags)
 {
@@ -184,7 +194,7 @@ s32 BPF_STRUCT_OPS(kun_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake
     }
 
 
-    // Try attached core in primary first, the highest priority, do not care the type of the task
+    // Try prefer core in primary first, the highest priority
     if (tctx->prefer_core >= 0) {
         if (bpf_cpumask_test_cpu(tctx->prefer_core, cast_mask(primary)) &&
             scx_bpf_test_and_clear_cpu_idle(tctx->prefer_core)) {
@@ -262,35 +272,20 @@ out_primary:
     
     struct pcpu_ctx *pcpu_ctx = bpf_map_lookup_elem(&pcpu_ctxs, &cpu);
     if (pcpu_ctx && pcpu_ctx->scheduled_degrade) {
-        // Get current cache miss rate
-        u64 *cache_misses, *cache_loads;
-        u32 key = 0;
-        cache_misses = bpf_map_lookup_percpu_elem(&cache_misses_map, &key, cpu);
-        cache_loads = bpf_map_lookup_percpu_elem(&cache_loads_map, &key, cpu);
-        u64 current_cache_miss_rate = *cache_misses / *cache_loads;
-        u64 last_cache_miss_rate = pcpu_ctx->last_cache_miss_rate;
-        if(current_cache_miss_rate- last_cache_miss_rate < 0.08) {
-            // Cancel the degrade timer
-            int err = bpf_timer_cancel(&pcpu_ctx->timer);
-            if (err < 0) {
-                scx_bpf_error("Failed to cancel pcpu timer");
-            }
-            pcpu_ctx->scheduled_degrade = false;
+        int err = bpf_timer_cancel(&pcpu_ctx->timer);
+        if (err < 0) {
+            scx_bpf_error("Failed to cancel pcpu timer");
         }
-
+        err = bpf_timer_set_callback(&pcpu_ctx->timer, degrade_primary_core);
+        if (err) {
+            scx_bpf_error("Failed to re-arm pcpu timer");
+        }
+        pcpu_ctx->scheduled_degrade = false;
     }
 
 
     if (tctx->prev_cpu == cpu)
-    {
         tctx->prefer_core = cpu;
-        // Set the prefer core to primary set
-        if (!bpf_cpumask_test_cpu(cpu, cast_mask(primary))&&!bpf_cpumask_test_cpu(cpu, cast_mask(buffer))) {
-            bpf_cpumask_set_cpu(cpu, primary);
-
-        }
-    }
-
     tctx->prev_cpu = prev_cpu;
 
     bpf_rcu_read_unlock();
@@ -306,18 +301,21 @@ void BPF_STRUCT_OPS(kun_enqueue, struct task_struct *p, u64 enq_flags)
 {
 	stat_inc(1);	/* count global queueing */
 
-    u64 vtime = p->scx.dsq_vtime;
+	if (fifo_sched) {
+		scx_bpf_dispatch(p, SHARED_DSQ, SCX_SLICE_DFL, enq_flags);
+	} else {
+		u64 vtime = p->scx.dsq_vtime;
 
-    /*
-        * Limit the amount of budget that an idling task can accumulate
-        * to one slice.
-        */
-    if (vtime_before(vtime, vtime_now - SCX_SLICE_DFL))
-        vtime = vtime_now - SCX_SLICE_DFL;
+		/*
+		 * Limit the amount of budget that an idling task can accumulate
+		 * to one slice.
+		 */
+		if (vtime_before(vtime, vtime_now - SCX_SLICE_DFL))
+			vtime = vtime_now - SCX_SLICE_DFL;
 
-    scx_bpf_dispatch_vtime(p, SHARED_DSQ, SCX_SLICE_DFL, vtime,
-                    enq_flags);
-	
+		scx_bpf_dispatch_vtime(p, SHARED_DSQ, SCX_SLICE_DFL, vtime,
+				       enq_flags);
+	}
 }
 
 
@@ -357,28 +355,17 @@ s32 BPF_STRUCT_OPS(kun_dispatch, s32 cpu, struct task_struct *prev)
         return 0;
     }
 
-    // Handle CPU degrade
+    // Handle CPU demotion
     if (in_primary) {
         if (prev && prev->__state == TASK_DEAD) {
-            // Immediate degrade if task died
+            // Immediate demotion if task died
             bpf_cpumask_clear_cpu(cpu, primary);
             try_make_core_buffer(cpu, buffer, false);
         } else {
-            // Record initial cache miss rate
-            u64 *cache_misses, *cache_loads;
-            u32 key = 0;
-            cache_misses = bpf_map_lookup_percpu_elem(&cache_misses_map, &key, cpu);
-            cache_loads = bpf_map_lookup_percpu_elem(&cache_loads_map, &key, cpu);
-            
-            if (cache_misses && cache_loads) {
-                pcpu_ctx->last_cache_miss_rate = *cache_misses / *cache_loads;
-            }
-
             // Schedule degrade timer
             pcpu_ctx->scheduled_degrade = true;
             bpf_timer_start(&pcpu_ctx->timer, P_REMOVE_NS, BPF_F_TIMER_CPU_PIN);
-            bpf_timer_set_callback(&pcpu_ctx->timer, degrade_primary_core);
-
+            //bpf_timer_set_callback(&pcpu_ctx->timer, degrade_primary_core);
         }
     }
 
@@ -389,6 +376,12 @@ s32 BPF_STRUCT_OPS(kun_dispatch, s32 cpu, struct task_struct *prev)
 void BPF_STRUCT_OPS(kun_running, struct task_struct *p)
 {
 
+	/*
+	 * Global vtime always progresses forward as tasks start executing. The
+	 * test and update can be performed concurrently from multiple CPUs and
+	 * thus racy. Any error should be contained and temporary. Let's just
+	 * live with it.
+	 */
 	if (vtime_before(vtime_now, p->scx.dsq_vtime))
 		vtime_now = p->scx.dsq_vtime;
 
@@ -413,6 +406,16 @@ void BPF_STRUCT_OPS(kun_running, struct task_struct *p)
 
 void BPF_STRUCT_OPS(kun_stopping, struct task_struct *p, bool runnable)
 {
+	/*
+	 * Scale the execution time by the inverse of the weight and charge.
+	 *
+	 * Note that the default yield implementation yields by setting
+	 * @p->scx.slice to zero and the following would treat the yielding task
+	 * as if it has consumed all its slice. If this penalizes yielding tasks
+	 * too much, determine the execution time by taking explicit timestamps
+	 * instead of depending on @p->scx.slice.
+	 */
+
 
 	p->scx.dsq_vtime += (SCX_SLICE_DFL - p->scx.slice) * 100 / p->scx.weight;
 
