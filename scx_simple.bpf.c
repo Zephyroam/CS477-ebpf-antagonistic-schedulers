@@ -21,9 +21,6 @@
  * Copyright (c) 2022 David Vernet <dvernet@meta.com>
  */
 #include "include/scx/common.bpf.h"
-// #include <linux/perf_event.h>
-// #include <bpf/bpf_helpers.h>
-// #include <bpf/bpf_tracing.h>
 
 
 char _license[] SEC("license") = "GPL";
