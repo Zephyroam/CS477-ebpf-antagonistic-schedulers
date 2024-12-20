@@ -184,7 +184,7 @@ s32 BPF_STRUCT_OPS(kun_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake
     }
 
 
-    // Try attached core in primary first, the highest priority
+    // Try attached core in primary first, the highest priority, do not care the type of the task
     if (tctx->prefer_core >= 0) {
         if (bpf_cpumask_test_cpu(tctx->prefer_core, cast_mask(primary)) &&
             scx_bpf_test_and_clear_cpu_idle(tctx->prefer_core)) {
@@ -275,12 +275,9 @@ out_primary:
             if (err < 0) {
                 scx_bpf_error("Failed to cancel pcpu timer");
             }
-            err = bpf_timer_set_callback(&pcpu_ctx->timer, degrade_primary_core);
-            if (err) {
-                scx_bpf_error("Failed to re-arm pcpu timer");
-            }
             pcpu_ctx->scheduled_degrade = false;
         }
+
     }
 
 
@@ -288,13 +285,9 @@ out_primary:
     {
         tctx->prefer_core = cpu;
         // Set the prefer core to primary set
-        if (!bpf_cpumask_test_cpu(cpu, cast_mask(primary))) {
-        bpf_cpumask_set_cpu(cpu, primary);
-        // If it was in buffer set, remove it
-        if (bpf_cpumask_test_cpu(cpu, cast_mask(buffer))) {
-            __sync_fetch_and_add(&nr_buffer, -1);
-            bpf_cpumask_clear_cpu(cpu, buffer);
-            }
+        if (!bpf_cpumask_test_cpu(cpu, cast_mask(primary))&&!bpf_cpumask_test_cpu(cpu, cast_mask(buffer))) {
+            bpf_cpumask_set_cpu(cpu, primary);
+
         }
     }
 
@@ -384,6 +377,8 @@ s32 BPF_STRUCT_OPS(kun_dispatch, s32 cpu, struct task_struct *prev)
             // Schedule degrade timer
             pcpu_ctx->scheduled_degrade = true;
             bpf_timer_start(&pcpu_ctx->timer, P_REMOVE_NS, BPF_F_TIMER_CPU_PIN);
+            bpf_timer_set_callback(&pcpu_ctx->timer, degrade_primary_core);
+
         }
     }
 
