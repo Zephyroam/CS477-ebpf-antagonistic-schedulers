@@ -4,7 +4,7 @@
 
 char _license[] SEC("license") = "GPL";
 
-const volatile bool fifo_sched;
+const volatile bool fifo_sched;//for test
 
 static u64 vtime_now;
 UEI_DEFINE(uei);
@@ -18,23 +18,24 @@ UEI_DEFINE(uei);
 #define R_MAX 3
 #define TASK_DEAD                       0x00000080
 
-private(NESTS) struct bpf_cpumask __kptr *primary_cpumask;
-private(NESTS) struct bpf_cpumask __kptr *reserve_cpumask;
-static s32 nr_reserved;
+struct bpf_cpumask __kptr *primary_cpumask;
+struct bpf_cpumask __kptr *buffer_cpumask;
+static s32 nr_buffer;
 
 //task context
 struct task_ctx {
 	bool isLimited;
 	u64 last_cache_miss_rate;
-	struct bpf_cpumask __kptr *tmp_mask;
-    s32 attached_core;
+	
+    s32 prefer_core;
     s32 prev_cpu;
 };
 
 //per cpu context
 struct pcpu_ctx {
     struct bpf_timer timer;
-    bool scheduled_compaction;
+    bool scheduled_degrade;
+    u64 last_cache_miss_rate; 
 };
 
 
@@ -105,12 +106,12 @@ int count_cache_loads(struct bpf_perf_event_value *ctx) {
 
 
 
-static void try_make_core_reserved(s32 cpu, struct bpf_cpumask *reserve, bool promotion) 
+static void try_make_core_buffer(s32 cpu, struct bpf_cpumask *buffer, bool promotion) 
 {
-    s32 tmp_nr_reserved = nr_reserved;
-    if (tmp_nr_reserved < R_MAX) {
-        __sync_fetch_and_add(&nr_reserved, 1);
-        bpf_cpumask_set_cpu(cpu, reserve);
+    s32 tmp_nr_buffer = nr_buffer;
+    if (tmp_nr_buffer < R_MAX) {
+        __sync_fetch_and_add(&nr_buffer, 1);
+        bpf_cpumask_set_cpu(cpu, buffer);
     }
 }
 
@@ -130,16 +131,16 @@ static inline bool vtime_before(u64 a, u64 b)
 }
 
 // automatically called by the kernel when the timer expires
-static int compact_primary_core(void *map, int *key, struct bpf_timer *timer)
+static int degrade_primary_core(void *map, int *key, struct bpf_timer *timer)
 {
     s32 cpu = *key;
     struct pcpu_ctx *pcpu_ctx;
-    struct bpf_cpumask *primary, *reserve;
+    struct bpf_cpumask *primary, *buffer;
 
     bpf_rcu_read_lock();
     primary = primary_cpumask;
-    reserve = reserve_cpumask;
-    if (!primary || !reserve) {
+    buffer = buffer_cpumask;
+    if (!primary || !buffer) {
         bpf_rcu_read_unlock();
         return 0;
     }
@@ -150,34 +151,22 @@ static int compact_primary_core(void *map, int *key, struct bpf_timer *timer)
         return 0;
     }
 
-    // Demote CPU from primary to reserve set
+    // Demote CPU from primary to buffer set
     bpf_cpumask_clear_cpu(cpu, primary);
-    try_make_core_reserved(cpu, reserve, false);
+    try_make_core_buffer(cpu, buffer, false);
 
-    // Reset the scheduled_compaction flag
-    pcpu_ctx->scheduled_compaction = false;
+    // Reset the scheduled_degrade flag
+    pcpu_ctx->scheduled_degrade = false;
 
     bpf_rcu_read_unlock();
     return 0;
 }
-// s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake_flags)
-// {
-// 	bool is_idle = false;
-// 	s32 cpu;
 
-// 	cpu = scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle);
-// 	if (is_idle) {
-// 		stat_inc(0);	/* count local queueing */
-// 		scx_bpf_dispatch(p, SCX_DSQ_LOCAL, SCX_SLICE_DFL, 0);
-// 	}
 
-// 	return cpu;
-// }
-
-s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake_flags)
+s32 BPF_STRUCT_OPS(kun_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake_flags)
 {
     struct task_ctx *tctx;
-    struct bpf_cpumask *primary, *reserve;
+    struct bpf_cpumask *primary, *buffer;
     s32 cpu;
     bool is_idle = false;
 
@@ -187,35 +176,35 @@ s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 w
 
     bpf_rcu_read_lock();
     primary = primary_cpumask;
-    reserve = reserve_cpumask;
+    buffer = buffer_cpumask;
 
-    if (!primary || !reserve) {
+    if (!primary || !buffer) {
         bpf_rcu_read_unlock();
         return scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle);
     }
 
 
     // Try attached core in primary first, the highest priority
-    if (tctx->attached_core >= 0) {
-        if (bpf_cpumask_test_cpu(tctx->attached_core, cast_mask(primary)) &&
-            scx_bpf_test_and_clear_cpu_idle(tctx->attached_core)) {
-            cpu = tctx->attached_core;
+    if (tctx->prefer_core >= 0) {
+        if (bpf_cpumask_test_cpu(tctx->prefer_core, cast_mask(primary)) &&
+            scx_bpf_test_and_clear_cpu_idle(tctx->prefer_core)) {
+            cpu = tctx->prefer_core;
             goto out_primary;
         }
     }
 
-    // Limited tasks can only use reserve or default CPUs, can not set cpu in reserve to primary
+    // Limited tasks can only use buffer or default CPUs, can not set cpu in buffer to primary
     if (tctx->isLimited) {
 
-        // Try fully idle CPU in reserve first
-        cpu = scx_bpf_pick_idle_cpu(cast_mask(reserve), SCX_PICK_IDLE_CORE);
+        // Try fully idle CPU in buffer first
+        cpu = scx_bpf_pick_idle_cpu(cast_mask(buffer), SCX_PICK_IDLE_CORE);
         if (cpu >= 0) {
             bpf_rcu_read_unlock();
             return cpu;
         }
 
-        // Try reserve set first
-        cpu = scx_bpf_pick_idle_cpu(cast_mask(reserve), 0);
+        // Try buffer set first
+        cpu = scx_bpf_pick_idle_cpu(cast_mask(buffer), 0);
         if (cpu >= 0) {
             bpf_rcu_read_unlock();
             return cpu;
@@ -244,24 +233,24 @@ s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 w
     if (cpu >= 0)
         goto out_primary;
 
-    // Try fully idle CPU in reserve
-    cpu = scx_bpf_pick_idle_cpu(cast_mask(reserve), SCX_PICK_IDLE_CORE);
+    // Try fully idle CPU in buffer
+    cpu = scx_bpf_pick_idle_cpu(cast_mask(buffer), SCX_PICK_IDLE_CORE);
     if (cpu >= 0) {
         bpf_cpumask_set_cpu(cpu, primary);
-        if (bpf_cpumask_test_cpu(cpu, cast_mask(reserve))) {
-            __sync_fetch_and_add(&nr_reserved, -1);
-            bpf_cpumask_clear_cpu(cpu, reserve);
+        if (bpf_cpumask_test_cpu(cpu, cast_mask(buffer))) {
+            __sync_fetch_and_add(&nr_buffer, -1);
+            bpf_cpumask_clear_cpu(cpu, buffer);
         }
         goto out_primary;
     }
 
-    // Try any idle CPU in reserve
-    cpu = scx_bpf_pick_idle_cpu(cast_mask(reserve), 0);
+    // Try any idle CPU in buffer
+    cpu = scx_bpf_pick_idle_cpu(cast_mask(buffer), 0);
     if (cpu >= 0) {
         bpf_cpumask_set_cpu(cpu, primary);
-        if (bpf_cpumask_test_cpu(cpu, cast_mask(reserve))) {
-            __sync_fetch_and_add(&nr_reserved, -1);
-            bpf_cpumask_clear_cpu(cpu, reserve);
+        if (bpf_cpumask_test_cpu(cpu, cast_mask(buffer))) {
+            __sync_fetch_and_add(&nr_buffer, -1);
+            bpf_cpumask_clear_cpu(cpu, buffer);
         }
         goto out_primary;
     }
@@ -272,21 +261,43 @@ s32 BPF_STRUCT_OPS(simple_select_cpu, struct task_struct *p, s32 prev_cpu, u64 w
 out_primary:
     
     struct pcpu_ctx *pcpu_ctx = bpf_map_lookup_elem(&pcpu_ctxs, &cpu);
-    if (pcpu_ctx && pcpu_ctx->scheduled_compaction) {
-        int err = bpf_timer_cancel(&pcpu_ctx->timer);
-        if (err < 0) {
-            scx_bpf_error("Failed to cancel pcpu timer");
+    if (pcpu_ctx && pcpu_ctx->scheduled_degrade) {
+        // Get current cache miss rate
+        u64 *cache_misses, *cache_loads;
+        u32 key = 0;
+        cache_misses = bpf_map_lookup_percpu_elem(&cache_misses_map, &key, cpu);
+        cache_loads = bpf_map_lookup_percpu_elem(&cache_loads_map, &key, cpu);
+        u64 current_cache_miss_rate = *cache_misses / *cache_loads;
+        u64 last_cache_miss_rate = pcpu_ctx->last_cache_miss_rate;
+        if(current_cache_miss_rate- last_cache_miss_rate < 0.08) {
+            // Cancel the degrade timer
+            int err = bpf_timer_cancel(&pcpu_ctx->timer);
+            if (err < 0) {
+                scx_bpf_error("Failed to cancel pcpu timer");
+            }
+            err = bpf_timer_set_callback(&pcpu_ctx->timer, degrade_primary_core);
+            if (err) {
+                scx_bpf_error("Failed to re-arm pcpu timer");
+            }
+            pcpu_ctx->scheduled_degrade = false;
         }
-        err = bpf_timer_set_callback(&pcpu_ctx->timer, compact_primary_core);
-        if (err) {
-            scx_bpf_error("Failed to re-arm pcpu timer");
-        }
-        pcpu_ctx->scheduled_compaction = false;
     }
 
 
     if (tctx->prev_cpu == cpu)
-        tctx->attached_core = cpu;
+    {
+        tctx->prefer_core = cpu;
+        // Set the prefer core to primary set
+        if (!bpf_cpumask_test_cpu(cpu, cast_mask(primary))) {
+        bpf_cpumask_set_cpu(cpu, primary);
+        // If it was in buffer set, remove it
+        if (bpf_cpumask_test_cpu(cpu, cast_mask(buffer))) {
+            __sync_fetch_and_add(&nr_buffer, -1);
+            bpf_cpumask_clear_cpu(cpu, buffer);
+            }
+        }
+    }
+
     tctx->prev_cpu = prev_cpu;
 
     bpf_rcu_read_unlock();
@@ -298,33 +309,30 @@ out_primary:
 
     return cpu;
 }
-void BPF_STRUCT_OPS(simple_enqueue, struct task_struct *p, u64 enq_flags)
+void BPF_STRUCT_OPS(kun_enqueue, struct task_struct *p, u64 enq_flags)
 {
 	stat_inc(1);	/* count global queueing */
 
-	if (fifo_sched) {
-		scx_bpf_dispatch(p, SHARED_DSQ, SCX_SLICE_DFL, enq_flags);
-	} else {
-		u64 vtime = p->scx.dsq_vtime;
+    u64 vtime = p->scx.dsq_vtime;
 
-		/*
-		 * Limit the amount of budget that an idling task can accumulate
-		 * to one slice.
-		 */
-		if (vtime_before(vtime, vtime_now - SCX_SLICE_DFL))
-			vtime = vtime_now - SCX_SLICE_DFL;
+    /*
+        * Limit the amount of budget that an idling task can accumulate
+        * to one slice.
+        */
+    if (vtime_before(vtime, vtime_now - SCX_SLICE_DFL))
+        vtime = vtime_now - SCX_SLICE_DFL;
 
-		scx_bpf_dispatch_vtime(p, SHARED_DSQ, SCX_SLICE_DFL, vtime,
-				       enq_flags);
-	}
+    scx_bpf_dispatch_vtime(p, SHARED_DSQ, SCX_SLICE_DFL, vtime,
+                    enq_flags);
+	
 }
 
 
 
-s32 BPF_STRUCT_OPS(simple_dispatch, s32 cpu, struct task_struct *prev)
+s32 BPF_STRUCT_OPS(kun_dispatch, s32 cpu, struct task_struct *prev)
 {
     struct pcpu_ctx *pcpu_ctx;
-    struct bpf_cpumask *primary, *reserve;
+    struct bpf_cpumask *primary, *buffer;
     bool in_primary;
     s32 ret = 0;
 
@@ -334,9 +342,9 @@ s32 BPF_STRUCT_OPS(simple_dispatch, s32 cpu, struct task_struct *prev)
 
     bpf_rcu_read_lock();
     primary = primary_cpumask;
-    reserve = reserve_cpumask;
+    buffer = buffer_cpumask;
 
-    if (!primary || !reserve) {
+    if (!primary || !buffer) {
         bpf_rcu_read_unlock();
         return -EINVAL;
     }
@@ -356,15 +364,25 @@ s32 BPF_STRUCT_OPS(simple_dispatch, s32 cpu, struct task_struct *prev)
         return 0;
     }
 
-    // Handle CPU demotion
+    // Handle CPU degrade
     if (in_primary) {
         if (prev && prev->__state == TASK_DEAD) {
-            // Immediate demotion if task died
+            // Immediate degrade if task died
             bpf_cpumask_clear_cpu(cpu, primary);
-            try_make_core_reserved(cpu, reserve, false);
+            try_make_core_buffer(cpu, buffer, false);
         } else {
-            // Schedule compaction timer
-            pcpu_ctx->scheduled_compaction = true;
+            // Record initial cache miss rate
+            u64 *cache_misses, *cache_loads;
+            u32 key = 0;
+            cache_misses = bpf_map_lookup_percpu_elem(&cache_misses_map, &key, cpu);
+            cache_loads = bpf_map_lookup_percpu_elem(&cache_loads_map, &key, cpu);
+            
+            if (cache_misses && cache_loads) {
+                pcpu_ctx->last_cache_miss_rate = *cache_misses / *cache_loads;
+            }
+
+            // Schedule degrade timer
+            pcpu_ctx->scheduled_degrade = true;
             bpf_timer_start(&pcpu_ctx->timer, P_REMOVE_NS, BPF_F_TIMER_CPU_PIN);
         }
     }
@@ -373,15 +391,9 @@ s32 BPF_STRUCT_OPS(simple_dispatch, s32 cpu, struct task_struct *prev)
     return ret;
 }
 
-void BPF_STRUCT_OPS(simple_running, struct task_struct *p)
+void BPF_STRUCT_OPS(kun_running, struct task_struct *p)
 {
 
-	/*
-	 * Global vtime always progresses forward as tasks start executing. The
-	 * test and update can be performed concurrently from multiple CPUs and
-	 * thus racy. Any error should be contained and temporary. Let's just
-	 * live with it.
-	 */
 	if (vtime_before(vtime_now, p->scx.dsq_vtime))
 		vtime_now = p->scx.dsq_vtime;
 
@@ -404,18 +416,8 @@ void BPF_STRUCT_OPS(simple_running, struct task_struct *p)
 
 }
 
-void BPF_STRUCT_OPS(simple_stopping, struct task_struct *p, bool runnable)
+void BPF_STRUCT_OPS(kun_stopping, struct task_struct *p, bool runnable)
 {
-	/*
-	 * Scale the execution time by the inverse of the weight and charge.
-	 *
-	 * Note that the default yield implementation yields by setting
-	 * @p->scx.slice to zero and the following would treat the yielding task
-	 * as if it has consumed all its slice. If this penalizes yielding tasks
-	 * too much, determine the execution time by taking explicit timestamps
-	 * instead of depending on @p->scx.slice.
-	 */
-
 
 	p->scx.dsq_vtime += (SCX_SLICE_DFL - p->scx.slice) * 100 / p->scx.weight;
 
@@ -442,7 +444,7 @@ void BPF_STRUCT_OPS(simple_stopping, struct task_struct *p, bool runnable)
 
 }
 
-void BPF_STRUCT_OPS(simple_enable, struct task_struct *p)
+void BPF_STRUCT_OPS(kun_enable, struct task_struct *p)
 {
 	p->scx.dsq_vtime = vtime_now;
 
@@ -450,7 +452,7 @@ void BPF_STRUCT_OPS(simple_enable, struct task_struct *p)
 
 
 
-s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
+s32 BPF_STRUCT_OPS_SLEEPABLE(kun_init)
 {
     struct bpf_cpumask *cpumask;
     int ret;
@@ -472,23 +474,23 @@ s32 BPF_STRUCT_OPS_SLEEPABLE(simple_init)
     if (cpumask)
         bpf_cpumask_release(cpumask);
 
-    // Initialize reserve set
+    // Initialize buffer set
     cpumask = bpf_cpumask_create();
     if (!cpumask)
         return -ENOMEM;
     bpf_cpumask_clear(cpumask);
-    cpumask = bpf_kptr_xchg(&reserve_cpumask, cpumask);
+    cpumask = bpf_kptr_xchg(&buffer_cpumask, cpumask);
     if (cpumask)
         bpf_cpumask_release(cpumask);
     return 0;
 }
 
-SCX_OPS_DEFINE(simple_ops,
-	       .select_cpu		= (void *)simple_select_cpu,
-	       .enqueue			= (void *)simple_enqueue,
-	       .dispatch		= (void *)simple_dispatch,
-	       .running			= (void *)simple_running,
-	       .stopping		= (void *)simple_stopping,
-	       .enable			= (void *)simple_enable,
-	       .init			= (void *)simple_init,
-	       .name			= "simple");
+SCX_OPS_DEFINE(kun_ops,
+	       .select_cpu		= (void *)kun_select_cpu,
+	       .enqueue			= (void *)kun_enqueue,
+	       .dispatch		= (void *)kun_dispatch,
+	       .running			= (void *)kun_running,
+	       .stopping		= (void *)kun_stopping,
+	       .enable			= (void *)kun_enable,
+	       .init			= (void *)kun_init,
+	       .name			= "kun");
