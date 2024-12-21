@@ -159,19 +159,6 @@ static int degrade_primary_core(void *map, int *key, struct bpf_timer *timer)
     bpf_rcu_read_unlock();
     return 0;
 }
-// s32 BPF_STRUCT_OPS(kun_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake_flags)
-// {
-// 	bool is_idle = false;
-// 	s32 cpu;
-
-// 	cpu = scx_bpf_select_cpu_dfl(p, prev_cpu, wake_flags, &is_idle);
-// 	if (is_idle) {
-// 		stat_inc(0);	/* count local queueing */
-// 		scx_bpf_dispatch(p, SCX_DSQ_LOCAL, SCX_SLICE_DFL, 0);
-// 	}
-
-// 	return cpu;
-// }
 
 s32 BPF_STRUCT_OPS(kun_select_cpu, struct task_struct *p, s32 prev_cpu, u64 wake_flags)
 {
@@ -285,7 +272,15 @@ out_primary:
 
 
     if (tctx->prev_cpu == cpu)
+    {
+        
         tctx->prefer_core = cpu;
+        //If normal cpu it is and been the prefer_core, set it to primary
+        if (!bpf_cpumask_test_cpu(cpu, cast_mask(primary))&&!bpf_cpumask_test_cpu(cpu, cast_mask(buffer))) {
+            bpf_cpumask_set_cpu(cpu, primary);
+        }
+    }
+        
     tctx->prev_cpu = prev_cpu;
 
     bpf_rcu_read_unlock();
@@ -365,7 +360,7 @@ s32 BPF_STRUCT_OPS(kun_dispatch, s32 cpu, struct task_struct *prev)
             // Schedule degrade timer
             pcpu_ctx->scheduled_degrade = true;
             bpf_timer_start(&pcpu_ctx->timer, P_REMOVE_NS, BPF_F_TIMER_CPU_PIN);
-            //bpf_timer_set_callback(&pcpu_ctx->timer, degrade_primary_core);
+            bpf_timer_set_callback(&pcpu_ctx->timer, degrade_primary_core);
         }
     }
 
@@ -376,12 +371,6 @@ s32 BPF_STRUCT_OPS(kun_dispatch, s32 cpu, struct task_struct *prev)
 void BPF_STRUCT_OPS(kun_running, struct task_struct *p)
 {
 
-	/*
-	 * Global vtime always progresses forward as tasks start executing. The
-	 * test and update can be performed concurrently from multiple CPUs and
-	 * thus racy. Any error should be contained and temporary. Let's just
-	 * live with it.
-	 */
 	if (vtime_before(vtime_now, p->scx.dsq_vtime))
 		vtime_now = p->scx.dsq_vtime;
 
@@ -406,15 +395,6 @@ void BPF_STRUCT_OPS(kun_running, struct task_struct *p)
 
 void BPF_STRUCT_OPS(kun_stopping, struct task_struct *p, bool runnable)
 {
-	/*
-	 * Scale the execution time by the inverse of the weight and charge.
-	 *
-	 * Note that the default yield implementation yields by setting
-	 * @p->scx.slice to zero and the following would treat the yielding task
-	 * as if it has consumed all its slice. If this penalizes yielding tasks
-	 * too much, determine the execution time by taking explicit timestamps
-	 * instead of depending on @p->scx.slice.
-	 */
 
 
 	p->scx.dsq_vtime += (SCX_SLICE_DFL - p->scx.slice) * 100 / p->scx.weight;
